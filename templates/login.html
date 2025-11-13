@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f7fb; }
+    .container { width: 360px; margin: 60px auto; background: white; padding: 24px; border-radius:8px; box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
+    input[type=text], input[type=password] { width:100%; padding:10px; margin:8px 0; box-sizing:border-box; }
+    button { width:100%; padding:10px; background:#0b79d0; color:white; border:none; border-radius:4px; }
+    .flash { padding:8px; margin-bottom:10px; border-radius:4px; }
+    .danger { background:#ffd2d2; }
+    .success { background:#d2ffd6; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Login</h2>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+          <div class="flash {{ category }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    <form method="post" action="{{ url_for('login') }}">
+      <label>Username</label>
+      <input type="text" name="username" required value="{{ username|default('') }}">
+      <label>Password</label>
+      <input type="password" name="password" required>
+      <button type="submit">Log in</button>
+    </form>
+  </div>
+</body>
+</html>
