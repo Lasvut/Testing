@@ -1,0 +1,38 @@
+======================================================================
+ACCURACY VALIDATION TEST
+======================================================================
+
+Loading CSIC dataset...
+✅ Loaded 3000 normal samples
+✅ Loaded 1500 attack samples
+
+Training set: 2100 normal + 1050 attack
+Test set: 900 normal + 450 attack
+
+Training detector with supervised learning...
+
+[Enhanced Detector] Training on 2100 normal requests...
+[Enhanced Detector] Also using 1050 attack samples for supervised learning
+[Enhanced Detector] Building n-gram models...
+[Enhanced Detector] Calculating endpoint thresholds...
+[Enhanced Detector] Training Random Forest Classifier (Supervised)...
+[Enhanced Detector] Training XGBoost Classifier...
+[Enhanced Detector] Training Random Forest for ensemble...
+[Enhanced Detector] Creating Voting Ensemble (XGBoost + Random Forest)...
+[Enhanced Detector] ✅ XGBoost Voting Ensemble trained successfully
+[Enhanced Detector] ✅ Supervised model trained successfully
+[Enhanced Detector]    Training set: 2100 normal + 1050 attack
+[Enhanced Detector] ✅ Training complete
+  - Feature distributions: 38
+  - Parameter whitelist: 20 params
+  - Bigrams: 1299, Trigrams: 6607
+  - Endpoint thresholds: 1 paths
+Traceback (most recent call last):
+  File "/home/user/Testing/test_accuracy.py", line 130, in <module>
+    main()
+  File "/home/user/Testing/test_accuracy.py", line 69, in main
+    detector.train_baseline(train_normal, attack_requests=train_attacks)
+  File "/home/user/Testing/ultra_anomaly_detection.py", line 494, in train_baseline
+    print(f"  - ML: Random Forest with {self.random_forest.n_estimators} trees (Supervised)")
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'VotingClassifier' object has no attribute 'n_estimators'. Did you mean: 'estimators'?
