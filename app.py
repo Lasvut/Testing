@@ -3,6 +3,7 @@ from werkzeug.security import check_password_hash
 from middleware import waf_middleware
 from database import get_user_by_username, init_db, get_attack_stats, get_recent_logs, get_connection, create_user, get_all_users
 from ultra_anomaly_detection import EnhancedUltraAnomalyDetector as AnomalyDetector
+from attack_generator import AttackGenerator
 import os
 import shutil
 import csv
@@ -17,6 +18,10 @@ init_db()
 
 # Apply WAF middleware
 waf_middleware(app)
+
+# Initialize attack generator (starts in background)
+attack_gen = AttackGenerator(base_url='http://localhost:5000', interval=30)
+# Note: Will start when app runs
 
 @app.route('/')
 def index():
@@ -619,5 +624,55 @@ def logout():
     flash("Logged out", "info")
     return redirect(url_for('login'))
 
+# Attack Generator Control Endpoints
+@app.route('/api/attack-generator/start', methods=['POST'])
+def start_attack_generator():
+    """Start the attack generator"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        attack_gen.start()
+        return jsonify({"success": True, "message": "Attack generator started"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/attack-generator/stop', methods=['POST'])
+def stop_attack_generator():
+    """Stop the attack generator"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        attack_gen.stop()
+        return jsonify({"success": True, "message": "Attack generator stopped"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/attack-generator/status', methods=['GET'])
+def attack_generator_status():
+    """Get attack generator status"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return jsonify({
+        "running": attack_gen.running,
+        "interval": attack_gen.interval
+    })
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Start attack generator in background
+    print("\n" + "="*70)
+    print("STARTING WAF SYSTEM")
+    print("="*70)
+    print(f"🚀 Starting attack generator (interval: {attack_gen.interval}s)")
+    print("   This will simulate attacks for demo purposes")
+    print("   Check /monitor to see blocked attacks")
+    print("="*70 + "\n")
+
+    attack_gen.start()
+
+    try:
+        app.run(debug=True, use_reloader=False)  # use_reloader=False prevents double startup
+    finally:
+        attack_gen.stop()
