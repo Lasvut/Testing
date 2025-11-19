@@ -38,3 +38,6 @@ Fine-grained threshold search (40-84 in steps of 2)...
 ⚠️  T= 52: Acc= 77.48%  Prec= 68.53%  Rec= 60.00%  F1= 63.98%  (TP=135 FP=62 TN=388 FN=90)
 ⚠️  T= 54: Acc= 78.07%  Prec= 69.95%  Rec= 60.00%  F1= 64.59%  (TP=135 FP=58 TN=392 FN=90)
 ⚠️  T= 56: Acc= 78.22%  Prec= 70.31%  Rec= 60.00%  F1= 64.75%  (TP=135 FP=57 TN=393 FN=90)
+⚠️  T= 58: Acc= 78.22%  Prec= 70.31%  Rec= 60.00%  F1= 64.75%  (TP=135 FP=57 TN=393 FN=90)
+⚠️  T= 60: Acc= 78.22%  Prec= 70.31%  Rec= 60.00%  F1= 64.75%  (TP=135 FP=57 TN=393 FN=90)
+⚠️  T= 62: Acc= 78.67%  Prec= 71.43%  Rec= 60.00%  F1= 65.22%  (TP=135 FP=54 TN=396 FN=90)
