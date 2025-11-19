@@ -19,6 +19,12 @@ SAFE_PATHS = [
     '/tools',
     '/anomaly-testing',   # Anomaly testing page
     '/user-management',   # User management page
+    '/attack-tools',      # Attack tools page
+]
+
+# Paths that should bypass WAF for POST requests (e.g., login forms)
+SAFE_POST_PATHS = [
+    '/login',  # Allow login form submissions without WAF inspection
 ]
 
 # Administrative endpoints that bypass anomaly detection when authenticated
@@ -31,6 +37,10 @@ ADMIN_ENDPOINTS = [
     '/api/anomaly/test',   # Anomaly detection testing (may contain attack patterns in samples)
     '/api/users',          # User listing
     '/api/users/create',   # User creation
+    '/api/attack-tools/generate',  # Manual attack generator (contains attack patterns)
+    '/api/attack-generator/start',  # Auto attack generator control
+    '/api/attack-generator/stop',   # Auto attack generator control
+    '/api/attack-generator/status', # Auto attack generator status
 ]
 
 # Initialize enhanced anomaly detector with ML enabled
@@ -117,11 +127,15 @@ def waf_middleware(app):
         # Skip monitoring for safe paths (GET only, no query params)
         if request.path in SAFE_PATHS and request.method == 'GET' and not request.args:
             return
-        
+
+        # Skip POST requests to safe POST paths (e.g., login forms)
+        if request.path in SAFE_POST_PATHS and request.method == 'POST':
+            return
+
         # Skip static files
         if request.path.startswith('/static'):
             return
-        
+
         # Skip admin endpoints if user is authenticated
         # These are legitimate operations that may contain SQL/command keywords
         if request.path in ADMIN_ENDPOINTS:
