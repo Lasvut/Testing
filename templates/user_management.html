@@ -171,6 +171,11 @@
         // Log activity
         function logActivity(message, type = 'info') {
             const logDiv = document.getElementById('activityLog');
+            if (!logDiv) {
+                console.log(`[Activity Log] ${message}`);
+                return;
+            }
+
             const timestamp = new Date().toLocaleTimeString();
             const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
             const entry = document.createElement('div');
@@ -182,12 +187,17 @@
 
         // Load users
         function loadUsers() {
-            document.getElementById('loadingSpinner').style.display = 'inline-block';
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            if (loadingSpinner) {
+                loadingSpinner.style.display = 'inline-block';
+            }
 
             fetch('/api/users')
                 .then(response => response.json())
                 .then(data => {
                     const tbody = document.getElementById('usersTableBody');
+                    if (!tbody) return;
+
                     tbody.innerHTML = '';
 
                     if (data.users && data.users.length > 0) {
@@ -195,32 +205,53 @@
                             const row = document.createElement('tr');
                             row.className = 'user-row';
 
-                            const createdDate = new Date(user.created_at);
-                            const formattedDate = createdDate.toLocaleString();
+                            // Handle both timestamp and datetime formats
+                            let formattedDate = 'N/A';
+                            if (user.created_at) {
+                                try {
+                                    const createdDate = new Date(user.created_at);
+                                    formattedDate = createdDate.toLocaleString();
+                                } catch (e) {
+                                    formattedDate = user.created_at;
+                                }
+                            }
 
                             row.innerHTML = `
-                                <td>${user.id}</td>
-                                <td><strong>${user.username}</strong></td>
+                                <td>${user.id || 'N/A'}</td>
+                                <td><strong>${user.username || 'Unknown'}</strong></td>
                                 <td>${formattedDate}</td>
                             `;
                             tbody.appendChild(row);
                         });
 
-                        document.getElementById('userCount').textContent = `Total users: ${data.users.length}`;
+                        const userCount = document.getElementById('userCount');
+                        if (userCount) {
+                            userCount.textContent = `Total users: ${data.users.length}`;
+                        }
                         logActivity(`Loaded ${data.users.length} user(s) from database.`);
                     } else {
                         tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No users found</td></tr>';
-                        document.getElementById('userCount').textContent = 'Total users: 0';
+                        const userCount = document.getElementById('userCount');
+                        if (userCount) {
+                            userCount.textContent = 'Total users: 0';
+                        }
                     }
 
-                    document.getElementById('loadingSpinner').style.display = 'none';
+                    if (loadingSpinner) {
+                        loadingSpinner.style.display = 'none';
+                    }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    document.getElementById('usersTableBody').innerHTML =
-                        '<tr><td colspan="3" class="text-center text-danger">Error loading users</td></tr>';
+                    const tbody = document.getElementById('usersTableBody');
+                    if (tbody) {
+                        tbody.innerHTML =
+                            '<tr><td colspan="3" class="text-center text-danger">Error loading users</td></tr>';
+                    }
                     logActivity('Error loading users: ' + error.message, 'error');
-                    document.getElementById('loadingSpinner').style.display = 'none';
+                    if (loadingSpinner) {
+                        loadingSpinner.style.display = 'none';
+                    }
                 });
         }
 
