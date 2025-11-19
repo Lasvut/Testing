@@ -94,10 +94,10 @@
             <div class="row align-items-center">
                 <div class="col-md-8">
                     <label for="thresholdSlider" class="form-label fw-bold">
-                        Detection Threshold: <span id="thresholdValue">75</span>
+                        Detection Threshold: <span id="thresholdValue">60</span>
                     </label>
-                    <input type="range" class="form-range" id="thresholdSlider" min="0" max="100" value="75">
-                    <small class="text-muted">Higher threshold = more strict detection</small>
+                    <input type="range" class="form-range" id="thresholdSlider" min="0" max="100" value="60">
+                    <small class="text-muted">Higher threshold = more strict detection (Optimal: 60 for best accuracy)</small>
                 </div>
                 <div class="col-md-4">
                     <button class="btn btn-primary w-100" id="runTestBtn" onclick="runAnomalyTest()">
