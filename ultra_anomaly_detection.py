@@ -26,13 +26,21 @@ import os
 
 # Optional ML imports - graceful fallback if not available
 try:
-    from sklearn.ensemble import IsolationForest, RandomForestClassifier, GradientBoostingClassifier
+    from sklearn.ensemble import IsolationForest, RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
     from sklearn.preprocessing import StandardScaler
     from sklearn.feature_extraction.text import TfidfVectorizer
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
     print("⚠️  scikit-learn not available. ML features disabled. Install with: pip install scikit-learn")
+
+# XGBoost import (optional)
+try:
+    from xgboost import XGBClassifier
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    print("⚠️  XGBoost not available. Install with: pip install xgboost")
 
 
 class EnhancedUltraAnomalyDetector:
@@ -362,26 +370,77 @@ class EnhancedUltraAnomalyDetector:
                     self.scaler = StandardScaler()
                     X_train_scaled = self.scaler.fit_transform(X_train)
 
-                    # Try Gradient Boosting first (usually more accurate)
-                    print("[Enhanced Detector] Also training Gradient Boosting for comparison...")
-                    try:
-                        gradient_boost = GradientBoostingClassifier(
-                            n_estimators=200,
-                            learning_rate=0.1,
-                            max_depth=7,
-                            min_samples_split=4,
-                            min_samples_leaf=2,
-                            subsample=0.8,
-                            random_state=42
-                        )
-                        gradient_boost.fit(X_train_scaled, y_train)
+                    # Try XGBoost first (usually most accurate)
+                    if XGBOOST_AVAILABLE:
+                        print("[Enhanced Detector] Training XGBoost Classifier...")
+                        try:
+                            # Calculate scale_pos_weight for class imbalance
+                            n_neg = len(feature_matrix)
+                            n_pos = len(attack_matrix)
+                            scale_pos_weight = n_neg / n_pos if n_pos > 0 else 1
 
-                        # Use Gradient Boosting as primary model
-                        self.random_forest = gradient_boost
-                        print("[Enhanced Detector] Using Gradient Boosting as primary model")
-                    except Exception as gb_error:
-                        print(f"[Enhanced Detector] Gradient Boosting failed: {gb_error}, falling back to Random Forest")
-                        # Fallback to Random Forest
+                            xgb_model = XGBClassifier(
+                                n_estimators=300,
+                                max_depth=8,
+                                learning_rate=0.1,
+                                subsample=0.8,
+                                colsample_bytree=0.8,
+                                scale_pos_weight=scale_pos_weight,
+                                random_state=42,
+                                n_jobs=-1,
+                                eval_metric='logloss'
+                            )
+                            xgb_model.fit(X_train_scaled, y_train)
+
+                            # Train Random Forest for ensemble
+                            print("[Enhanced Detector] Training Random Forest for ensemble...")
+                            rf_model = RandomForestClassifier(
+                                n_estimators=200,
+                                max_depth=15,
+                                min_samples_split=3,
+                                min_samples_leaf=1,
+                                max_features='sqrt',
+                                random_state=42,
+                                n_jobs=-1,
+                                class_weight='balanced'
+                            )
+                            rf_model.fit(X_train_scaled, y_train)
+
+                            # Create Voting Ensemble for maximum accuracy
+                            print("[Enhanced Detector] Creating Voting Ensemble (XGBoost + Random Forest)...")
+                            self.random_forest = VotingClassifier(
+                                estimators=[
+                                    ('xgb', xgb_model),
+                                    ('rf', rf_model)
+                                ],
+                                voting='soft',  # Use probability averaging
+                                weights=[2, 1]  # Give more weight to XGBoost
+                            )
+                            self.random_forest.fit(X_train_scaled, y_train)
+
+                            # Get feature importance from XGBoost
+                            self.feature_importance = dict(zip(feature_names, xgb_model.feature_importances_))
+
+                            print("[Enhanced Detector] ✅ XGBoost Voting Ensemble trained successfully")
+                        except Exception as xgb_error:
+                            print(f"[Enhanced Detector] XGBoost failed: {xgb_error}, trying Gradient Boosting...")
+                            # Fallback to Gradient Boosting
+                            gradient_boost = GradientBoostingClassifier(
+                                n_estimators=200,
+                                learning_rate=0.1,
+                                max_depth=7,
+                                min_samples_split=4,
+                                min_samples_leaf=2,
+                                subsample=0.8,
+                                random_state=42
+                            )
+                            gradient_boost.fit(X_train_scaled, y_train)
+                            self.random_forest = gradient_boost
+                            self.feature_importance = dict(zip(feature_names, gradient_boost.feature_importances_))
+                            print("[Enhanced Detector] Using Gradient Boosting as fallback")
+                    else:
+                        # Fallback to Random Forest if XGBoost not available
+                        print("[Enhanced Detector] Training Random Forest (XGBoost not available)...")
                         self.random_forest = RandomForestClassifier(
                             n_estimators=300,
                             max_depth=20,
@@ -393,12 +452,9 @@ class EnhancedUltraAnomalyDetector:
                             class_weight='balanced'
                         )
                         self.random_forest.fit(X_train_scaled, y_train)
+                        self.feature_importance = dict(zip(feature_names, self.random_forest.feature_importances_))
 
-                    # Get feature importance
-                    importances = self.random_forest.feature_importances_
-                    self.feature_importance = dict(zip(feature_names, importances))
-
-                    print("[Enhanced Detector] ✅ Random Forest trained successfully")
+                    print("[Enhanced Detector] ✅ Supervised model trained successfully")
                     print(f"[Enhanced Detector]    Training set: {len(feature_matrix)} normal + {len(attack_matrix)} attack")
                 except Exception as e:
                     print(f"[Enhanced Detector] ⚠️  Supervised learning failed: {e}")
@@ -435,7 +491,13 @@ class EnhancedUltraAnomalyDetector:
         print(f"  - Endpoint thresholds: {len(self.endpoint_thresholds)} paths")
         if self.enable_ml:
             if self.random_forest:
-                print(f"  - ML: Random Forest with {self.random_forest.n_estimators} trees (Supervised)")
+                model_type = type(self.random_forest).__name__
+                if model_type == 'VotingClassifier':
+                    print(f"  - ML: {model_type} Ensemble (Supervised)")
+                elif hasattr(self.random_forest, 'n_estimators'):
+                    print(f"  - ML: {model_type} with {self.random_forest.n_estimators} trees (Supervised)")
+                else:
+                    print(f"  - ML: {model_type} (Supervised)")
             elif self.isolation_forest:
                 print(f"  - ML: Isolation Forest with {self.isolation_forest.n_estimators} trees (Unsupervised)")
     

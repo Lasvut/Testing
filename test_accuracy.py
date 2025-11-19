@@ -39,8 +39,8 @@ def main():
 
     # Load samples
     print("Loading CSIC dataset...")
-    normal_samples = load_samples_from_csv('datasets/csic2010/CSIC_2010.csv', 'Normal', limit=1500)
-    attack_samples = load_samples_from_csv('datasets/csic2010/CSIC_2010.csv', 'Anomalous', limit=750)
+    normal_samples = load_samples_from_csv('datasets/csic2010/CSIC_2010.csv', 'Normal', limit=3000)
+    attack_samples = load_samples_from_csv('datasets/csic2010/CSIC_2010.csv', 'Anomalous', limit=1500)
 
     if not normal_samples or not attack_samples:
         print("❌ Could not load CSIC dataset")
