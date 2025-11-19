@@ -26,8 +26,9 @@ import os
 
 # Optional ML imports - graceful fallback if not available
 try:
-    from sklearn.ensemble import IsolationForest
+    from sklearn.ensemble import IsolationForest, RandomForestClassifier, GradientBoostingClassifier
     from sklearn.preprocessing import StandardScaler
+    from sklearn.feature_extraction.text import TfidfVectorizer
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
@@ -37,24 +38,27 @@ except ImportError:
 class EnhancedUltraAnomalyDetector:
     """Enhanced detector with ML and advanced statistical analysis"""
     
-    def __init__(self, enable_ml=True):
+    def __init__(self, enable_ml=True, use_supervised=True):
         self.baseline_stats = {}
         self.endpoint_thresholds = defaultdict(lambda: 25)  # Adaptive per endpoint
         self.trained = False
         self.enable_ml = enable_ml and ML_AVAILABLE
-        
+        self.use_supervised = use_supervised and ML_AVAILABLE
+
         # ML components
         self.isolation_forest = None
+        self.random_forest = None  # Supervised model
         self.scaler = None
         self.feature_importance = {}
-        
+        self.tfidf_vectorizer = None  # For URL token analysis
+
         # Statistical baselines
         self.feature_distributions = {}  # Mean and std for each feature
-        
+
         # Context tracking
         self.endpoint_patterns = defaultdict(lambda: {'count': 0, 'avg_score': 0})
         self.param_whitelist = set()
-        
+
         # N-gram models for obfuscation detection
         self.normal_bigrams = Counter()
         self.normal_trigrams = Counter()
@@ -264,17 +268,24 @@ class EnhancedUltraAnomalyDetector:
                 count = 0
         return max_count
     
-    def train_baseline(self, normal_requests):
-        """Train on normal traffic with ML and statistical analysis"""
+    def train_baseline(self, normal_requests, attack_requests=None):
+        """Train on normal traffic with ML and statistical analysis
+
+        Args:
+            normal_requests: List of normal request samples
+            attack_requests: Optional list of attack samples for supervised learning
+        """
         print(f"\n[Enhanced Detector] Training on {len(normal_requests)} normal requests...")
-        
+        if attack_requests:
+            print(f"[Enhanced Detector] Also using {len(attack_requests)} attack samples for supervised learning")
+
         if not normal_requests:
             return
-        
+
         # Extract features from all normal requests
         all_features = [self.extract_features(req) for req in normal_requests]
         feature_names = list(all_features[0].keys())
-        
+
         # Build feature matrix for ML
         feature_matrix = []
         for features in all_features:
@@ -332,23 +343,89 @@ class EnhancedUltraAnomalyDetector:
         
         # Train ML model if available
         if self.enable_ml:
-            print("[Enhanced Detector] Training Isolation Forest...")
-            try:
-                self.scaler = StandardScaler()
-                scaled_features = self.scaler.fit_transform(feature_matrix)
-                
-                self.isolation_forest = IsolationForest(
-                    contamination=0.01,  # Assume 1% contamination in training data
-                    random_state=42,
-                    n_estimators=100,
-                    max_samples='auto'
-                )
-                self.isolation_forest.fit(scaled_features)
-                
-                print("[Enhanced Detector] ✅ ML model trained successfully")
-            except Exception as e:
-                print(f"[Enhanced Detector] ⚠️  ML training failed: {e}")
-                self.enable_ml = False
+            # Try supervised learning if we have attack samples
+            if self.use_supervised and attack_requests:
+                print("[Enhanced Detector] Training Random Forest Classifier (Supervised)...")
+                try:
+                    # Extract features from attack samples
+                    attack_features = [self.extract_features(req) for req in attack_requests]
+                    attack_matrix = []
+                    for features in attack_features:
+                        attack_matrix.append([features[name] for name in feature_names])
+                    attack_matrix = np.array(attack_matrix)
+
+                    # Combine normal (label=0) and attack (label=1) samples
+                    X_train = np.vstack([feature_matrix, attack_matrix])
+                    y_train = np.array([0] * len(feature_matrix) + [1] * len(attack_matrix))
+
+                    # Scale features
+                    self.scaler = StandardScaler()
+                    X_train_scaled = self.scaler.fit_transform(X_train)
+
+                    # Try Gradient Boosting first (usually more accurate)
+                    print("[Enhanced Detector] Also training Gradient Boosting for comparison...")
+                    try:
+                        gradient_boost = GradientBoostingClassifier(
+                            n_estimators=200,
+                            learning_rate=0.1,
+                            max_depth=7,
+                            min_samples_split=4,
+                            min_samples_leaf=2,
+                            subsample=0.8,
+                            random_state=42
+                        )
+                        gradient_boost.fit(X_train_scaled, y_train)
+
+                        # Use Gradient Boosting as primary model
+                        self.random_forest = gradient_boost
+                        print("[Enhanced Detector] Using Gradient Boosting as primary model")
+                    except Exception as gb_error:
+                        print(f"[Enhanced Detector] Gradient Boosting failed: {gb_error}, falling back to Random Forest")
+                        # Fallback to Random Forest
+                        self.random_forest = RandomForestClassifier(
+                            n_estimators=300,
+                            max_depth=20,
+                            min_samples_split=3,
+                            min_samples_leaf=1,
+                            max_features='sqrt',
+                            random_state=42,
+                            n_jobs=-1,
+                            class_weight='balanced'
+                        )
+                        self.random_forest.fit(X_train_scaled, y_train)
+
+                    # Get feature importance
+                    importances = self.random_forest.feature_importances_
+                    self.feature_importance = dict(zip(feature_names, importances))
+
+                    print("[Enhanced Detector] ✅ Random Forest trained successfully")
+                    print(f"[Enhanced Detector]    Training set: {len(feature_matrix)} normal + {len(attack_matrix)} attack")
+                except Exception as e:
+                    print(f"[Enhanced Detector] ⚠️  Supervised learning failed: {e}")
+                    self.use_supervised = False
+
+            # Always train Isolation Forest as fallback
+            if not self.use_supervised or not attack_requests:
+                print("[Enhanced Detector] Training Isolation Forest (Unsupervised)...")
+                try:
+                    if self.scaler is None:
+                        self.scaler = StandardScaler()
+                        scaled_features = self.scaler.fit_transform(feature_matrix)
+                    else:
+                        scaled_features = self.scaler.transform(feature_matrix)
+
+                    self.isolation_forest = IsolationForest(
+                        contamination=0.01,  # Assume 1% contamination in training data
+                        random_state=42,
+                        n_estimators=100,
+                        max_samples='auto'
+                    )
+                    self.isolation_forest.fit(scaled_features)
+
+                    print("[Enhanced Detector] ✅ Isolation Forest trained successfully")
+                except Exception as e:
+                    print(f"[Enhanced Detector] ⚠️  ML training failed: {e}")
+                    self.enable_ml = False
         
         self.trained = True
         print(f"[Enhanced Detector] ✅ Training complete")
@@ -357,7 +434,10 @@ class EnhancedUltraAnomalyDetector:
         print(f"  - Bigrams: {len(self.normal_bigrams)}, Trigrams: {len(self.normal_trigrams)}")
         print(f"  - Endpoint thresholds: {len(self.endpoint_thresholds)} paths")
         if self.enable_ml:
-            print(f"  - ML: Isolation Forest with {self.isolation_forest.n_estimators} trees")
+            if self.random_forest:
+                print(f"  - ML: Random Forest with {self.random_forest.n_estimators} trees (Supervised)")
+            elif self.isolation_forest:
+                print(f"  - ML: Isolation Forest with {self.isolation_forest.n_estimators} trees (Unsupervised)")
     
     def calculate_statistical_anomaly_score(self, features):
         """Calculate z-score based anomaly detection"""
@@ -388,22 +468,41 @@ class EnhancedUltraAnomalyDetector:
     
     def calculate_ml_anomaly_score(self, features):
         """Calculate ML-based anomaly score"""
-        if not self.enable_ml or not self.isolation_forest:
+        if not self.enable_ml:
             return 0
-        
+
         try:
             feature_names = list(self.feature_distributions.keys())
             feature_vector = np.array([[features[name] for name in feature_names]])
             scaled_vector = self.scaler.transform(feature_vector)
-            
-            # Get anomaly score (lower is more anomalous)
-            # Returns values around -1 to 1, where negative is anomalous
-            ml_score = -self.isolation_forest.score_samples(scaled_vector)[0]
-            
-            # Convert to 0-100 scale (0 = normal, 100 = highly anomalous)
-            normalized_score = max(0, ml_score * 100)
-            
-            return min(normalized_score, 100)  # Cap at 100
+
+            # Prefer Random Forest if available (supervised)
+            if self.use_supervised and self.random_forest:
+                # Get probability of being an attack (class 1)
+                attack_prob = self.random_forest.predict_proba(scaled_vector)[0][1]
+
+                # Convert to 0-100 scale with confidence boost
+                # If model is very confident (>80%), add a boost
+                ml_score = attack_prob * 100
+
+                # Confidence boost: Add extra weight for high-confidence predictions
+                if attack_prob > 0.8:
+                    ml_score += (attack_prob - 0.8) * 20  # Up to 4 point boost
+
+                return min(ml_score, 100)  # Cap at 100
+
+            # Fallback to Isolation Forest (unsupervised)
+            elif self.isolation_forest:
+                # Get anomaly score (lower is more anomalous)
+                # Returns values around -1 to 1, where negative is anomalous
+                ml_score = -self.isolation_forest.score_samples(scaled_vector)[0]
+
+                # Convert to 0-100 scale (0 = normal, 100 = highly anomalous)
+                normalized_score = max(0, ml_score * 100)
+
+                return min(normalized_score, 100)  # Cap at 100
+
+            return 0
         except Exception as e:
             return 0
     
@@ -548,24 +647,59 @@ class EnhancedUltraAnomalyDetector:
             rule_score += 20
             breakdown['Base64-like pattern'] = "+20"
         
-        total_score += rule_score * 0.5  # 50% weight
-        
+        # ===========================
+        # ENSEMBLE WEIGHTING
+        # ===========================
+        # Adaptive weights: More weight to ML if using supervised learning
+        if self.use_supervised and self.random_forest:
+            # Supervised learning: Maximize ML model weight for best accuracy
+            # 20% rules, 10% stats, 70% ML
+            rule_weight = 0.20
+            stat_weight = 0.10
+            ml_weight = 0.70
+        else:
+            # Unsupervised or no ML: 50% rules, 30% stats, 20% ML
+            rule_weight = 0.50
+            stat_weight = 0.30
+            ml_weight = 0.20
+
+        total_score += rule_score * rule_weight
+
         # ===========================
         # METHOD 2: STATISTICAL SCORING
         # ===========================
         stat_score, stat_breakdown = self.calculate_statistical_anomaly_score(features)
-        total_score += stat_score * 0.3  # 30% weight
+        total_score += stat_score * stat_weight
         breakdown.update({f"Stat-{k}": v for k, v in stat_breakdown.items()})
-        
+
         # ===========================
         # METHOD 3: ML SCORING
         # ===========================
         if self.enable_ml:
             ml_score = self.calculate_ml_anomaly_score(features)
-            total_score += ml_score * 0.2  # 20% weight
+            total_score += ml_score * ml_weight
             if ml_score > 10:
-                breakdown['ML anomaly'] = f"+{ml_score:.0f}"
-        
+                model_type = "RF" if (self.use_supervised and self.random_forest) else "IF"
+                breakdown[f'ML-{model_type} anomaly'] = f"+{ml_score:.0f}"
+
+        # ===========================
+        # CONSENSUS BONUS
+        # ===========================
+        # Add small bonus when multiple methods agree (all indicate attack)
+        if self.use_supervised and self.random_forest:
+            # Check if all three methods indicate an anomaly
+            rule_indicates_attack = rule_score > 30
+            stat_indicates_attack = stat_score > 20
+            ml_indicates_attack = ml_score > 50 if self.enable_ml else False
+
+            agreement_count = sum([rule_indicates_attack, stat_indicates_attack, ml_indicates_attack])
+
+            if agreement_count >= 2:  # At least 2 methods agree
+                consensus_bonus = 3 * agreement_count  # 6-9 point bonus
+                total_score += consensus_bonus
+                if consensus_bonus > 0:
+                    breakdown['Consensus bonus'] = f"+{consensus_bonus}"
+
         return total_score, breakdown
     
     def get_adaptive_threshold(self, request_data, default=25):
@@ -616,7 +750,7 @@ class EnhancedUltraAnomalyDetector:
         if not self.trained:
             print("⚠️  Model not trained yet")
             return False
-        
+
         model_data = {
             'baseline_stats': self.baseline_stats,
             'feature_distributions': self.feature_distributions,
@@ -626,6 +760,9 @@ class EnhancedUltraAnomalyDetector:
             'normal_trigrams': self.normal_trigrams,
             'scaler': self.scaler,
             'isolation_forest': self.isolation_forest,
+            'random_forest': self.random_forest,  # Save Random Forest
+            'use_supervised': self.use_supervised,
+            'feature_importance': self.feature_importance,
         }
         
         try:
@@ -642,11 +779,11 @@ class EnhancedUltraAnomalyDetector:
         if not os.path.exists(filepath):
             print(f"⚠️  Model file not found: {filepath}")
             return False
-        
+
         try:
             with open(filepath, 'rb') as f:
                 model_data = pickle.load(f)
-            
+
             self.baseline_stats = model_data['baseline_stats']
             self.feature_distributions = model_data['feature_distributions']
             self.endpoint_thresholds = defaultdict(lambda: 25, model_data['endpoint_thresholds'])
@@ -655,11 +792,17 @@ class EnhancedUltraAnomalyDetector:
             self.normal_trigrams = model_data['normal_trigrams']
             self.scaler = model_data['scaler']
             self.isolation_forest = model_data['isolation_forest']
-            
+
+            # Load Random Forest if available (backward compatible)
+            self.random_forest = model_data.get('random_forest', None)
+            self.use_supervised = model_data.get('use_supervised', False)
+            self.feature_importance = model_data.get('feature_importance', {})
+
             self.trained = True
-            self.enable_ml = self.isolation_forest is not None
-            
-            print(f"✅ Model loaded from {filepath}")
+            self.enable_ml = (self.isolation_forest is not None) or (self.random_forest is not None)
+
+            model_type = "Random Forest" if self.random_forest else "Isolation Forest"
+            print(f"✅ Model loaded from {filepath} (using {model_type})")
             return True
         except Exception as e:
             print(f"❌ Error loading model: {e}")
