@@ -33,6 +33,7 @@ ADMIN_ENDPOINTS = [
     '/api/db/clear',       # Database log clearing
     '/api/db/backup',      # Database backup
     '/api/db/export',      # CSV export
+    '/api/db/pdf',         # PDF report generation
     '/api/db/stats',       # Database statistics
     '/api/anomaly/test',   # Anomaly detection testing (may contain attack patterns in samples)
     '/api/users',          # User listing
