@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WAF Monitoring Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -314,38 +315,20 @@
             </div>
         </div>
         
-        <div class="chart-container">
-            <h2>📊 Attack Distribution by Type</h2>
-            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-                {% for item in stats.by_type %}
-                <div style="flex: 1; min-width: 200px;">
-                    <div style="font-weight: 600; margin-bottom: 5px;">{{ item.type }}</div>
-                    <div style="background: #e9ecef; height: 30px; border-radius: 5px; overflow: hidden;">
-                        {% set percentage = ((item.count / stats.total * 100)|round|int) if stats.total > 0 else 0 %}
-                        <div style="background: #667eea; height: 100%; width: {{ percentage }}%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600;">
-                            {{ item.count }}
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
+        <div class="chart-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+                <h2>📊 Attack Distribution by Type</h2>
+                <canvas id="attackTypeChart"></canvas>
+            </div>
+            <div>
+                <h2>🌍 Top Attacking IPs</h2>
+                <canvas id="topIPsChart"></canvas>
             </div>
         </div>
-        
+
         <div class="chart-container">
-            <h2>🌍 Top Attacking IPs</h2>
-            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-                {% for item in stats.top_ips %}
-                <div style="flex: 1; min-width: 200px;">
-                    <div style="font-weight: 600; margin-bottom: 5px;">{{ item.ip }}</div>
-                    <div style="background: #e9ecef; height: 30px; border-radius: 5px; overflow: hidden;">
-                        {% set percentage = ((item.count / stats.total * 100)|round|int) if stats.total > 0 else 0 %}
-                        <div style="background: #dc3545; height: 100%; width: {{ percentage }}%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600;">
-                            {{ item.count }}
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
+            <h2>📈 Attack Timeline (Last 24 Hours)</h2>
+            <canvas id="timelineChart" style="max-height: 250px;"></canvas>
         </div>
         
         <div class="logs-container">
@@ -368,7 +351,7 @@
                 <table class="log-table" id="logsTable">
                     <thead>
                         <tr>
-                            <th>ID</th>
+                            <th>#</th>
                             <th>Time</th>
                             <th>IP Address</th>
                             <th>Attack Type</th>
@@ -379,7 +362,7 @@
                     <tbody>
                         {% for log in logs %}
                         <tr data-type="{{ log.type }}">
-                            <td>{{ log.id }}</td>
+                            <td>{{ loop.index }}</td>
                             <td>{{ log.time[:19] }}</td>
                             <td><strong>{{ log.ip }}</strong></td>
                             <td>
@@ -401,16 +384,16 @@
         function filterLogs(type) {
             const rows = document.querySelectorAll('#logsTable tbody tr');
             const buttons = document.querySelectorAll('.filter-btn');
-            
+
             buttons.forEach(btn => btn.classList.remove('active'));
-            
+
             // Find and activate the clicked button
             buttons.forEach(btn => {
                 if (btn.textContent === type || (type === 'all' && btn.textContent === 'All')) {
                     btn.classList.add('active');
                 }
             });
-            
+
             rows.forEach(row => {
                 if (type === 'all' || row.dataset.type === type) {
                     row.style.display = '';
@@ -419,7 +402,130 @@
                 }
             });
         }
-        
+
+        // Chart colors
+        const chartColors = [
+            '#dc3545', '#fd7e14', '#6f42c1', '#20c997', '#0dcaf0',
+            '#ffc107', '#6c757d', '#667eea', '#764ba2', '#28a745'
+        ];
+
+        // Attack Type Distribution Chart
+        const attackTypeData = {
+            labels: [{% for item in stats.by_type %}'{{ item.type }}'{% if not loop.last %}, {% endif %}{% endfor %}],
+            datasets: [{
+                data: [{% for item in stats.by_type %}{{ item.count }}{% if not loop.last %}, {% endif %}{% endfor %}],
+                backgroundColor: chartColors,
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        };
+
+        new Chart(document.getElementById('attackTypeChart'), {
+            type: 'doughnut',
+            data: attackTypeData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { padding: 15, font: { size: 12 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                let value = context.parsed || 0;
+                                let total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                let percentage = ((value / total) * 100).toFixed(1);
+                                return label + ': ' + value + ' (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Top IPs Chart
+        const topIPsData = {
+            labels: [{% for item in stats.top_ips[:10] %}'{{ item.ip }}'{% if not loop.last %}, {% endif %}{% endfor %}],
+            datasets: [{
+                label: 'Attacks',
+                data: [{% for item in stats.top_ips[:10] %}{{ item.count }}{% if not loop.last %}, {% endif %}{% endfor %}],
+                backgroundColor: chartColors[0],
+                borderColor: chartColors[0],
+                borderWidth: 2
+            }]
+        };
+
+        new Chart(document.getElementById('topIPsChart'), {
+            type: 'bar',
+            data: topIPsData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                indexAxis: 'y',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Attacks: ' + context.parsed.x;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: { precision: 0 }
+                    }
+                }
+            }
+        });
+
+        // Timeline Chart (Last 24 Hours)
+        const timelineData = {
+            labels: [{% for item in stats.by_hour %}'{{ item.hour[11:16] }}'{% if not loop.last %}, {% endif %}{% endfor %}],
+            datasets: [{
+                label: 'Attacks per Hour',
+                data: [{% for item in stats.by_hour %}{{ item.count }}{% if not loop.last %}, {% endif %}{% endfor %}],
+                backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                borderColor: '#667eea',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4
+            }]
+        };
+
+        new Chart(document.getElementById('timelineChart'), {
+            type: 'line',
+            data: timelineData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                return 'Hour: ' + context[0].label;
+                            },
+                            label: function(context) {
+                                return 'Attacks: ' + context.parsed.y;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { precision: 0 }
+                    }
+                }
+            }
+        });
+
         // Auto-refresh every 30 seconds
         setInterval(() => {
             location.reload();
