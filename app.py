@@ -631,7 +631,7 @@ def get_normal_samples():
                         })
 
                         # Limit to 5000 samples for maximum training accuracy
-                        if len(normal_samples) >= 5000:
+                        if len(normal_samples) >= 7000:
                             break
 
             if len(normal_samples) >= 50:
@@ -717,7 +717,7 @@ def get_malicious_samples():
                         })
 
                         # Limit to 3000 attack samples for maximum training accuracy
-                        if len(attack_samples) >= 3000:
+                        if len(attack_samples) >= 4500:
                             break
 
             if len(attack_samples) >= 30:
