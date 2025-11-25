@@ -479,9 +479,9 @@ def api_anomaly_test():
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.get_json()
-    # Use optimal threshold of 80 for high accuracy detection
-    # Triple ensemble (XGBoost + Random Forest + Gradient Boosting) on up to 5,600 training samples
-    # OPTIMIZED: 80% ML weight, aggressive scoring, enhanced hyperparameters
+    # Use optimal threshold of 80 for balanced accuracy detection
+    # Dual ensemble (XGBoost + Random Forest) on up to 5,600 training samples
+    # BALANCED: 65% ML weight, calibrated scoring, optimized hyperparameters
     threshold = data.get('threshold', 80)
 
     try:
