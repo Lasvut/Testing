@@ -379,59 +379,82 @@ class EnhancedUltraAnomalyDetector:
                             n_pos = len(attack_matrix)
                             scale_pos_weight = n_neg / n_pos if n_pos > 0 else 1
 
+                            # OPTIMIZED XGBOOST HYPERPARAMETERS FOR HIGHER RECALL
                             xgb_model = XGBClassifier(
-                                n_estimators=300,
-                                max_depth=8,
-                                learning_rate=0.1,
-                                subsample=0.8,
-                                colsample_bytree=0.8,
+                                n_estimators=500,  # Increased from 300
+                                max_depth=10,  # Increased from 8
+                                learning_rate=0.05,  # Decreased for better generalization
+                                subsample=0.9,  # Increased from 0.8
+                                colsample_bytree=0.9,  # Increased from 0.8
                                 scale_pos_weight=scale_pos_weight,
+                                min_child_weight=1,  # Lower to allow more splits
+                                gamma=0,  # Allow all splits
+                                reg_alpha=0.1,  # L1 regularization
+                                reg_lambda=1.0,  # L2 regularization
                                 random_state=42,
                                 n_jobs=-1,
-                                eval_metric='logloss'
+                                eval_metric='logloss',
+                                tree_method='hist',  # Faster training
                             )
                             xgb_model.fit(X_train_scaled, y_train)
 
-                            # Train Random Forest for ensemble
+                            # Train Random Forest with OPTIMIZED parameters
                             print("[Enhanced Detector] Training Random Forest for ensemble...")
                             rf_model = RandomForestClassifier(
-                                n_estimators=200,
-                                max_depth=15,
-                                min_samples_split=3,
+                                n_estimators=300,  # Increased from 200
+                                max_depth=20,  # Increased from 15
+                                min_samples_split=2,  # More aggressive splitting
                                 min_samples_leaf=1,
                                 max_features='sqrt',
                                 random_state=42,
                                 n_jobs=-1,
-                                class_weight='balanced'
+                                class_weight='balanced_subsample',  # Better for imbalanced data
+                                bootstrap=True,
+                                oob_score=True
                             )
                             rf_model.fit(X_train_scaled, y_train)
 
-                            # Create Voting Ensemble for maximum accuracy
-                            print("[Enhanced Detector] Creating Voting Ensemble (XGBoost + Random Forest)...")
+                            # Train Gradient Boosting as third model
+                            print("[Enhanced Detector] Training Gradient Boosting for ensemble...")
+                            gb_model = GradientBoostingClassifier(
+                                n_estimators=300,
+                                learning_rate=0.08,
+                                max_depth=9,
+                                min_samples_split=2,
+                                min_samples_leaf=1,
+                                subsample=0.9,
+                                random_state=42
+                            )
+                            gb_model.fit(X_train_scaled, y_train)
+
+                            # Create TRIPLE Voting Ensemble for maximum accuracy
+                            print("[Enhanced Detector] Creating Triple Voting Ensemble (XGBoost + RF + GB)...")
                             self.random_forest = VotingClassifier(
                                 estimators=[
                                     ('xgb', xgb_model),
-                                    ('rf', rf_model)
+                                    ('rf', rf_model),
+                                    ('gb', gb_model)
                                 ],
                                 voting='soft',  # Use probability averaging
-                                weights=[2, 1]  # Give more weight to XGBoost
+                                weights=[3, 2, 1]  # XGBoost gets most weight, then RF, then GB
                             )
                             self.random_forest.fit(X_train_scaled, y_train)
 
                             # Get feature importance from XGBoost
                             self.feature_importance = dict(zip(feature_names, xgb_model.feature_importances_))
 
-                            print("[Enhanced Detector] ✅ XGBoost Voting Ensemble trained successfully")
+                            print("[Enhanced Detector] ✅ Triple Ensemble (XGBoost + RF + GB) trained successfully")
+                            print(f"[Enhanced Detector]    RF OOB Score: {rf_model.oob_score_:.4f}")
                         except Exception as xgb_error:
                             print(f"[Enhanced Detector] XGBoost failed: {xgb_error}, trying Gradient Boosting...")
                             # Fallback to Gradient Boosting
                             gradient_boost = GradientBoostingClassifier(
-                                n_estimators=200,
-                                learning_rate=0.1,
-                                max_depth=7,
-                                min_samples_split=4,
-                                min_samples_leaf=2,
-                                subsample=0.8,
+                                n_estimators=300,
+                                learning_rate=0.08,
+                                max_depth=9,
+                                min_samples_split=2,
+                                min_samples_leaf=1,
+                                subsample=0.9,
                                 random_state=42
                             )
                             gradient_boost.fit(X_train_scaled, y_train)
@@ -543,15 +566,21 @@ class EnhancedUltraAnomalyDetector:
                 # Get probability of being an attack (class 1)
                 attack_prob = self.random_forest.predict_proba(scaled_vector)[0][1]
 
-                # Convert to 0-100 scale with confidence boost
-                # If model is very confident (>80%), add a boost
-                ml_score = attack_prob * 100
+                # Convert to 0-100 scale with AGGRESSIVE SCALING for better recall
+                # Use power transformation to amplify higher probabilities
+                # This makes the model more sensitive to potential attacks
+                ml_score = (attack_prob ** 0.85) * 110  # Slightly over 100 for aggressive detection
 
-                # Confidence boost: Add extra weight for high-confidence predictions
-                if attack_prob > 0.8:
-                    ml_score += (attack_prob - 0.8) * 20  # Up to 4 point boost
+                # ENHANCED Confidence boost for high-confidence predictions
+                if attack_prob > 0.7:  # Lowered threshold from 0.8
+                    confidence_boost = (attack_prob - 0.7) * 30  # Increased from 20
+                    ml_score += confidence_boost
 
-                return min(ml_score, 100)  # Cap at 100
+                # Additional boost for medium confidence (catching more attacks)
+                if 0.5 <= attack_prob < 0.7:
+                    ml_score += (attack_prob - 0.5) * 15
+
+                return min(ml_score, 120)  # Raised cap from 100 to 120 for aggressive detection
 
             # Fallback to Isolation Forest (unsupervised)
             elif self.isolation_forest:
@@ -714,11 +743,11 @@ class EnhancedUltraAnomalyDetector:
         # ===========================
         # Adaptive weights: More weight to ML if using supervised learning
         if self.use_supervised and self.random_forest:
-            # Supervised learning: Maximize ML model weight for best accuracy
-            # 20% rules, 10% stats, 70% ML
-            rule_weight = 0.20
-            stat_weight = 0.10
-            ml_weight = 0.70
+            # Supervised learning: MAXIMIZE ML model weight for best accuracy
+            # 15% rules, 5% stats, 80% ML (heavily favor the trained model)
+            rule_weight = 0.15
+            stat_weight = 0.05
+            ml_weight = 0.80
         else:
             # Unsupervised or no ML: 50% rules, 30% stats, 20% ML
             rule_weight = 0.50

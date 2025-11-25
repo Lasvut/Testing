@@ -479,8 +479,9 @@ def api_anomaly_test():
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.get_json()
-    # Use optimal threshold of 80 for maximum accuracy (80.81%)
-    # Empirically determined with XGBoost ensemble on 3,150 training samples
+    # Use optimal threshold of 80 for high accuracy detection
+    # Triple ensemble (XGBoost + Random Forest + Gradient Boosting) on up to 5,600 training samples
+    # OPTIMIZED: 80% ML weight, aggressive scoring, enhanced hyperparameters
     threshold = data.get('threshold', 80)
 
     try:
@@ -629,8 +630,8 @@ def get_normal_samples():
                             'timestamp': time.time()
                         })
 
-                        # Limit to 3000 samples for maximum training accuracy
-                        if len(normal_samples) >= 3000:
+                        # Limit to 5000 samples for maximum training accuracy
+                        if len(normal_samples) >= 5000:
                             break
 
             if len(normal_samples) >= 50:
@@ -715,8 +716,8 @@ def get_malicious_samples():
                             'timestamp': time.time()
                         })
 
-                        # Limit to 1500 attack samples for maximum training accuracy
-                        if len(attack_samples) >= 1500:
+                        # Limit to 3000 attack samples for maximum training accuracy
+                        if len(attack_samples) >= 3000:
                             break
 
             if len(attack_samples) >= 30:
