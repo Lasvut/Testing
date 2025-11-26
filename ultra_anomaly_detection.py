@@ -48,7 +48,7 @@ class EnhancedUltraAnomalyDetector:
     
     def __init__(self, enable_ml=True, use_supervised=True):
         self.baseline_stats = {}
-        self.endpoint_thresholds = defaultdict(lambda: 65)  # Adaptive per endpoint (OPTIMIZED for high recall)
+        self.endpoint_thresholds = defaultdict(lambda: 70)  # Adaptive per endpoint (BALANCED for precision+recall)
         self.trained = False
         self.enable_ml = enable_ml and ML_AVAILABLE
         self.use_supervised = use_supervised and ML_AVAILABLE
@@ -379,22 +379,22 @@ class EnhancedUltraAnomalyDetector:
                             n_pos = len(attack_matrix)
                             base_scale_pos_weight = n_neg / n_pos if n_pos > 0 else 1
 
-                            # HIGH-RECALL OPTIMIZED: Target 92%+ recall with 85%+ precision
-                            # Aggressive detection to minimize missed attacks
-                            scale_pos_weight = base_scale_pos_weight * 6.0  # BOOSTED: Aggressive attack detection
+                            # PRECISION-RECALL BALANCED: Target 90%+ on ALL metrics
+                            # Mathematical sweet spot for precision AND recall
+                            scale_pos_weight = base_scale_pos_weight * 4.2  # BALANCED: High recall with controlled FP
 
-                            # OPTIMIZED XGBOOST HYPERPARAMETERS - High Recall Focus
+                            # OPTIMIZED XGBOOST HYPERPARAMETERS - Balanced Performance
                             xgb_model = XGBClassifier(
-                                n_estimators=600,  # More trees for better learning
-                                max_depth=9,  # Deeper trees for complex patterns
-                                learning_rate=0.045,  # Slightly faster learning
-                                subsample=0.92,  # Higher sampling for recall
-                                colsample_bytree=0.92,  # More feature usage
-                                scale_pos_weight=scale_pos_weight,  # BOOSTED 6.0x
-                                min_child_weight=1,  # Allow finer splits for edge cases
-                                gamma=0.05,  # Reduced regularization for sensitivity
-                                reg_alpha=0.05,  # Lighter L1
-                                reg_lambda=0.5,  # Lighter L2
+                                n_estimators=650,  # More trees for stability
+                                max_depth=8,  # Balanced depth for precision
+                                learning_rate=0.04,  # Careful learning
+                                subsample=0.90,  # Balanced sampling
+                                colsample_bytree=0.90,  # Balanced feature usage
+                                scale_pos_weight=scale_pos_weight,  # BALANCED 4.2x
+                                min_child_weight=1.5,  # Prevent overfitting to noise
+                                gamma=0.08,  # Moderate regularization
+                                reg_alpha=0.06,  # Balanced L1
+                                reg_lambda=0.6,  # Balanced L2
                                 random_state=42,
                                 n_jobs=-1,
                                 eval_metric='aucpr',  # Optimize for precision-recall curve
@@ -402,45 +402,45 @@ class EnhancedUltraAnomalyDetector:
                             )
                             xgb_model.fit(X_train_scaled, y_train)
 
-                            # Train Random Forest with HIGH-RECALL OPTIMIZED parameters
+                            # Train Random Forest with PRECISION-RECALL BALANCED parameters
                             print("[Enhanced Detector] Training Random Forest for ensemble...")
-                            # BOOSTED class weight for high recall
-                            class_weight_dict = {0: 1.0, 1: 7.5}  # BOOSTED attack weighting
+                            # BALANCED class weight for high precision AND recall
+                            class_weight_dict = {0: 1.0, 1: 5.2}  # BALANCED attack weighting
 
                             rf_model = RandomForestClassifier(
-                                n_estimators=500,  # More trees for stability
-                                max_depth=18,  # Deeper for complex attack patterns
-                                min_samples_split=2,  # Allow maximum flexibility
-                                min_samples_leaf=1,  # Catch edge cases
+                                n_estimators=550,  # More trees for better decisions
+                                max_depth=16,  # Balanced depth
+                                min_samples_split=3,  # Prevent overfitting
+                                min_samples_leaf=2,  # Quality over quantity
                                 max_features='sqrt',
                                 random_state=42,
                                 n_jobs=-1,
-                                class_weight=class_weight_dict,  # BOOSTED 7.5x weighting
+                                class_weight=class_weight_dict,  # BALANCED 5.2x weighting
                                 bootstrap=True,
                                 oob_score=True,
-                                max_samples=0.93,  # Higher sampling for recall
-                                min_impurity_decrease=0.0002  # Very low threshold for sensitivity
+                                max_samples=0.91,  # Balanced sampling
+                                min_impurity_decrease=0.0004  # Balanced threshold
                             )
                             rf_model.fit(X_train_scaled, y_train)
 
-                            # Create HIGH-RECALL OPTIMIZED Voting Ensemble
-                            print("[Enhanced Detector] Creating High-Recall Optimized Ensemble (XGBoost + RF)...")
+                            # Create PRECISION-RECALL BALANCED Voting Ensemble
+                            print("[Enhanced Detector] Creating Precision-Recall Balanced Ensemble (XGBoost + RF)...")
                             self.random_forest = VotingClassifier(
                                 estimators=[
                                     ('xgb', xgb_model),
                                     ('rf', rf_model)
                                 ],
                                 voting='soft',  # Use probability averaging
-                                weights=[2.8, 1]  # Favor XGBoost more for precision
+                                weights=[2.6, 1]  # Balanced XGBoost preference
                             )
                             self.random_forest.fit(X_train_scaled, y_train)
 
                             # Get feature importance from XGBoost
                             self.feature_importance = dict(zip(feature_names, xgb_model.feature_importances_))
 
-                            print("[Enhanced Detector] ✅ High-Recall Optimized Ensemble (XGBoost + RF) trained successfully")
-                            print("[Enhanced Detector]    Target: 92%+ recall, 85%+ precision, 90%+ accuracy")
-                            print("[Enhanced Detector]    Config: XGB×6.0 scale, RF×7.5 class weight, 77% ML weight, aggressive scoring")
+                            print("[Enhanced Detector] ✅ Precision-Recall Balanced Ensemble (XGBoost + RF) trained successfully")
+                            print("[Enhanced Detector]    Target: 90%+ on ALL metrics (precision, recall, accuracy, F1, specificity)")
+                            print("[Enhanced Detector]    Config: XGB×4.2 scale, RF×5.2 class weight, 70% ML weight, balanced scoring")
                             print(f"[Enhanced Detector]    RF OOB Score: {rf_model.oob_score_:.4f}")
                         except Exception as xgb_error:
                             print(f"[Enhanced Detector] XGBoost failed: {xgb_error}, trying Gradient Boosting...")
@@ -563,25 +563,25 @@ class EnhancedUltraAnomalyDetector:
                 # Get probability of being an attack (class 1)
                 attack_prob = self.random_forest.predict_proba(scaled_vector)[0][1]
 
-                # HIGH-RECALL OPTIMIZED SCORING: Target 92%+ recall with 85%+ precision
-                # More aggressive scoring to catch edge cases
-                ml_score = (attack_prob ** 0.75) * 115  # Lower exponent = more aggressive
+                # PRECISION-RECALL BALANCED SCORING: Target 90%+ on ALL metrics
+                # Balanced scoring for low false positives and high true positives
+                ml_score = (attack_prob ** 0.84) * 110  # Balanced exponent
 
-                # Aggressive confidence thresholds - start boosting early
-                if attack_prob > 0.38:
-                    # Early confidence boost to catch borderline attacks
-                    confidence_boost = (attack_prob - 0.38) * 42
+                # Balanced confidence thresholds - require reasonable confidence
+                if attack_prob > 0.48:
+                    # Medium confidence boost for probable attacks
+                    confidence_boost = (attack_prob - 0.48) * 38
                     ml_score += confidence_boost
 
-                # Strong boost for medium-high confidence
-                if attack_prob > 0.68:
-                    ml_score += (attack_prob - 0.68) * 38
+                # Strong boost for high confidence
+                if attack_prob > 0.72:
+                    ml_score += (attack_prob - 0.72) * 34
 
                 # Maximum boost for very high confidence
-                if attack_prob > 0.88:
-                    ml_score += (attack_prob - 0.88) * 35
+                if attack_prob > 0.90:
+                    ml_score += (attack_prob - 0.90) * 30
 
-                return min(ml_score, 145)  # Higher cap for aggressive detection
+                return min(ml_score, 135)  # Balanced cap
 
             # Fallback to Isolation Forest (unsupervised)
             elif self.isolation_forest:
@@ -744,11 +744,11 @@ class EnhancedUltraAnomalyDetector:
         # ===========================
         # Adaptive weights: More weight to ML if using supervised learning
         if self.use_supervised and self.random_forest:
-            # HIGH-RECALL OPTIMIZED: 77% ML weight for maximum attack detection
-            # 18% rules, 5% stats, 77% ML
-            rule_weight = 0.18
-            stat_weight = 0.05
-            ml_weight = 0.77  # BOOSTED ML weight for high recall
+            # PRECISION-RECALL BALANCED: 70% ML weight for balanced detection
+            # 22% rules, 8% stats, 70% ML
+            rule_weight = 0.22
+            stat_weight = 0.08
+            ml_weight = 0.70  # BALANCED ML weight for precision + recall
         else:
             # Unsupervised or no ML: 50% rules, 30% stats, 20% ML
             rule_weight = 0.50
@@ -779,23 +779,23 @@ class EnhancedUltraAnomalyDetector:
         # ===========================
         # Add bonus when multiple methods agree (all indicate attack)
         if self.use_supervised and self.random_forest:
-            # Check if methods indicate an anomaly (LOWERED THRESHOLDS for high recall)
-            rule_indicates_attack = rule_score > 20  # Lower threshold
-            stat_indicates_attack = stat_score > 15  # Lower threshold
-            ml_indicates_attack = ml_score > 40 if self.enable_ml else False  # Lower threshold
+            # Check if methods indicate an anomaly (BALANCED THRESHOLDS)
+            rule_indicates_attack = rule_score > 25  # Balanced threshold
+            stat_indicates_attack = stat_score > 18  # Balanced threshold
+            ml_indicates_attack = ml_score > 45 if self.enable_ml else False  # Balanced threshold
 
             agreement_count = sum([rule_indicates_attack, stat_indicates_attack, ml_indicates_attack])
 
             if agreement_count >= 2:  # At least 2 methods agree
-                consensus_bonus = 4 * agreement_count  # 8-12 point bonus (increased)
+                consensus_bonus = 3.5 * agreement_count  # 7-10.5 point bonus (balanced)
                 total_score += consensus_bonus
                 if consensus_bonus > 0:
-                    breakdown['Consensus bonus'] = f"+{consensus_bonus}"
+                    breakdown['Consensus bonus'] = f"+{consensus_bonus:.1f}"
 
         return total_score, breakdown
     
-    def get_adaptive_threshold(self, request_data, default=65):
-        """Get adaptive threshold based on request context (OPTIMIZED for high recall)"""
+    def get_adaptive_threshold(self, request_data, default=70):
+        """Get adaptive threshold based on request context (BALANCED for precision+recall)"""
         if not self.trained:
             return default
 
@@ -805,17 +805,17 @@ class EnhancedUltraAnomalyDetector:
         if path in self.endpoint_thresholds:
             return self.endpoint_thresholds[path]
 
-        # Use default (optimized for 92%+ recall)
+        # Use default (optimized for 90%+ ALL metrics)
         return default
-    
+
     def is_anomalous(self, request_data, threshold=None):
-        """Detect if request is anomalous with adaptive thresholding (HIGH-RECALL OPTIMIZED)"""
+        """Detect if request is anomalous with adaptive thresholding (PRECISION-RECALL BALANCED)"""
         features = self.extract_features(request_data)
         score, breakdown = self.calculate_anomaly_score(features)
 
-        # Use adaptive threshold if not specified (OPTIMIZED for 92%+ recall)
+        # Use adaptive threshold if not specified (BALANCED for 90%+ ALL metrics)
         if threshold is None:
-            threshold = self.get_adaptive_threshold(request_data, default=65)
+            threshold = self.get_adaptive_threshold(request_data, default=70)
         
         is_anomalous = score >= threshold
         

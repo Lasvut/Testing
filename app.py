@@ -495,10 +495,10 @@ def api_anomaly_test():
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.get_json()
-    # Use optimal threshold of 65 for HIGH-RECALL detection
-    # Dual ensemble (XGBoost + Random Forest) with aggressive hyperparameters
-    # HIGH-RECALL: 77% ML weight, aggressive scoring, optimized for 92%+ recall
-    threshold = data.get('threshold', 65)
+    # Use optimal threshold of 70 for BALANCED precision-recall
+    # Dual ensemble (XGBoost + Random Forest) with balanced hyperparameters
+    # BALANCED: 70% ML weight, balanced scoring, optimized for 90%+ ALL metrics
+    threshold = data.get('threshold', 70)
 
     try:
         # Use pre-trained model if available, otherwise train on-demand
