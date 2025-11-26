@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """
-Train Optimized BALANCED ML Model for Anomaly Detection
+Train CONSERVATIVE ML Model for Low False Positives
 
-This script trains the balanced ML model with:
-- XGBoost Classifier (4.2x scale_pos_weight, 650 estimators)
-- Random Forest (5.2x class weight, 550 estimators)
-- Voting Ensemble (2.6:1 XGB:RF ratio)
-- 70% ML weight in scoring
-- Balanced scoring for 90%+ on ALL metrics
+This script trains a precision-focused ML model with:
+- XGBoost Classifier (3.0x scale_pos_weight, 700 estimators)
+- Random Forest (3.5x class weight, 600 estimators)
+- Voting Ensemble (2.4:1 XGB:RF ratio)
+- 60% ML weight in scoring
+- Conservative scoring for <500 false positives
 
 Target Performance:
-- Recall: 90%+
+- False Positives: <500 (out of ~7000 normal samples)
 - Precision: 90%+
-- Accuracy: 90%+
-- F1-Score: 90%+
-- Specificity: 90%+
+- Recall: 85%+
+- Accuracy: 88%+
+- F1-Score: 87%+
+- Specificity: 93%+
 """
 
 import os
@@ -59,14 +60,14 @@ def load_csic_samples(csv_file, label, max_samples):
 
 def main():
     print("="*80)
-    print("PRECISION-RECALL BALANCED ML MODEL TRAINING")
+    print("CONSERVATIVE ML MODEL TRAINING - LOW FALSE POSITIVES")
     print("="*80)
     print()
     print("Training Configuration:")
-    print("  🎯 Target: 90%+ on ALL metrics (precision, recall, accuracy, F1, specificity)")
-    print("  🤖 Model: XGBoost + Random Forest Ensemble")
+    print("  🎯 Target: <500 FP, 90%+ precision, 85%+ recall, 93%+ specificity")
+    print("  🤖 Model: XGBoost + Random Forest Ensemble (Conservative)")
     print("  📊 Data: CSIC 2010 HTTP Dataset")
-    print("  ⚖️  Weights: 70% ML, 22% Rules, 8% Stats")
+    print("  ⚖️  Weights: 60% ML, 30% Rules, 10% Stats")
     print()
 
     # Configuration
@@ -129,7 +130,7 @@ def main():
     detected = 0
 
     for i, sample in enumerate(test_attacks, 1):
-        is_anom, score, details = detector.is_anomalous(sample, threshold=70)
+        is_anom, score, details = detector.is_anomalous(sample, threshold=80)
         if is_anom:
             detected += 1
             print(f"  ✅ Attack {i}: DETECTED (score: {score:.1f})")
@@ -145,21 +146,21 @@ def main():
     print("TRAINING COMPLETE!")
     print("="*80)
     print()
-    print("✅ Precision-Recall Balanced Model Ready")
+    print("✅ Conservative Low False Positive Model Ready")
     print()
     print("Model Features:")
-    print(f"  • XGBoost: 650 trees, 4.2x scale_pos_weight")
-    print(f"  • Random Forest: 550 trees, 5.2x class weight")
-    print(f"  • Ensemble: 2.6:1 voting ratio")
-    print(f"  • Scoring: 70% ML weight, balanced thresholds")
-    print(f"  • Optimized for: 90%+ on ALL metrics")
+    print(f"  • XGBoost: 700 trees, 3.0x scale_pos_weight (CONSERVATIVE)")
+    print(f"  • Random Forest: 600 trees, 3.5x class weight (CONSERVATIVE)")
+    print(f"  • Ensemble: 2.4:1 voting ratio")
+    print(f"  • Scoring: 60% ML weight, conservative thresholds")
+    print(f"  • Optimized for: <500 FP, 90%+ precision, 85%+ recall")
     print()
     print(f"📦 Model saved to: {model_file}")
     print()
     print("Next steps:")
     print("  1. Test the model using the anomaly testing page")
-    print("  2. Expected metrics: 90%+ on ALL metrics (low false positives!)")
-    print("  3. Use threshold=70 for optimal performance")
+    print("  2. Expected metrics: <500 FP, 90%+ precision, 85%+ recall, 93%+ specificity")
+    print("  3. Use threshold=80 for optimal performance")
     print()
 
     return 0
