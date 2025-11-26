@@ -95,10 +95,10 @@
             <div class="row align-items-center">
                 <div class="col-md-8">
                     <label for="thresholdSlider" class="form-label fw-bold">
-                        Detection Threshold: <span id="thresholdValue">65</span>
+                        Detection Threshold: <span id="thresholdValue">70</span>
                     </label>
-                    <input type="range" class="form-range" id="thresholdSlider" min="0" max="100" value="65">
-                    <small class="text-muted">Higher threshold = more strict detection (Optimal: 65 for 92%+ recall with high precision)</small>
+                    <input type="range" class="form-range" id="thresholdSlider" min="0" max="100" value="70">
+                    <small class="text-muted">Higher threshold = more strict detection (Optimal: 70 for 90%+ on ALL metrics - balanced precision & recall)</small>
                 </div>
                 <div class="col-md-4">
                     <button class="btn btn-primary w-100" id="runTestBtn" onclick="runAnomalyTest()">

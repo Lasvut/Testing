@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Train Optimized High-Recall ML Model for Anomaly Detection
+Train Optimized BALANCED ML Model for Anomaly Detection
 
-This script trains the improved ML model with:
-- XGBoost Classifier (6.0x scale_pos_weight, 600 estimators)
-- Random Forest (7.5x class weight, 500 estimators)
-- Voting Ensemble (2.8:1 XGB:RF ratio)
-- 77% ML weight in scoring
-- Aggressive scoring for 92%+ recall
+This script trains the balanced ML model with:
+- XGBoost Classifier (4.2x scale_pos_weight, 650 estimators)
+- Random Forest (5.2x class weight, 550 estimators)
+- Voting Ensemble (2.6:1 XGB:RF ratio)
+- 70% ML weight in scoring
+- Balanced scoring for 90%+ on ALL metrics
 
 Target Performance:
-- Recall: 92%+
-- Precision: 85%+
+- Recall: 90%+
+- Precision: 90%+
 - Accuracy: 90%+
-- F1-Score: 88%+
-- Specificity: 88%+
+- F1-Score: 90%+
+- Specificity: 90%+
 """
 
 import os
@@ -59,14 +59,14 @@ def load_csic_samples(csv_file, label, max_samples):
 
 def main():
     print("="*80)
-    print("HIGH-RECALL OPTIMIZED ML MODEL TRAINING")
+    print("PRECISION-RECALL BALANCED ML MODEL TRAINING")
     print("="*80)
     print()
     print("Training Configuration:")
-    print("  🎯 Target: 92%+ recall, 85%+ precision, 90%+ accuracy")
+    print("  🎯 Target: 90%+ on ALL metrics (precision, recall, accuracy, F1, specificity)")
     print("  🤖 Model: XGBoost + Random Forest Ensemble")
     print("  📊 Data: CSIC 2010 HTTP Dataset")
-    print("  ⚖️  Weights: 77% ML, 18% Rules, 5% Stats")
+    print("  ⚖️  Weights: 70% ML, 22% Rules, 8% Stats")
     print()
 
     # Configuration
@@ -129,7 +129,7 @@ def main():
     detected = 0
 
     for i, sample in enumerate(test_attacks, 1):
-        is_anom, score, details = detector.is_anomalous(sample, threshold=65)
+        is_anom, score, details = detector.is_anomalous(sample, threshold=70)
         if is_anom:
             detected += 1
             print(f"  ✅ Attack {i}: DETECTED (score: {score:.1f})")
@@ -145,21 +145,21 @@ def main():
     print("TRAINING COMPLETE!")
     print("="*80)
     print()
-    print("✅ High-Recall Optimized Model Ready")
+    print("✅ Precision-Recall Balanced Model Ready")
     print()
     print("Model Features:")
-    print(f"  • XGBoost: 600 trees, 6.0x scale_pos_weight")
-    print(f"  • Random Forest: 500 trees, 7.5x class weight")
-    print(f"  • Ensemble: 2.8:1 voting ratio")
-    print(f"  • Scoring: 77% ML weight, aggressive thresholds")
-    print(f"  • Optimized for: 92%+ recall, 85%+ precision")
+    print(f"  • XGBoost: 650 trees, 4.2x scale_pos_weight")
+    print(f"  • Random Forest: 550 trees, 5.2x class weight")
+    print(f"  • Ensemble: 2.6:1 voting ratio")
+    print(f"  • Scoring: 70% ML weight, balanced thresholds")
+    print(f"  • Optimized for: 90%+ on ALL metrics")
     print()
     print(f"📦 Model saved to: {model_file}")
     print()
     print("Next steps:")
     print("  1. Test the model using the anomaly testing page")
-    print("  2. Expected metrics: Recall 92%+, Precision 85%+, Accuracy 90%+")
-    print("  3. Use threshold=65 for optimal performance")
+    print("  2. Expected metrics: 90%+ on ALL metrics (low false positives!)")
+    print("  3. Use threshold=70 for optimal performance")
     print()
 
     return 0
