@@ -67,8 +67,7 @@ Validated on CSIC 2010 HTTP dataset.
 
 ### Utilities
 
-- **`attack_generator.py`** - Background attack generator for testing
-- **`attack_generator_gui.py`** - GUI for manual attack generation
+- **`attack_generator.py`** - Background attack generator for testing/demo
 - **`create_admin.py`** - Create admin users
 - **`ATTACK_GENERATOR_README.md`** - Documentation for attack generator
 
