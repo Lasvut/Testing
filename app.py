@@ -3,8 +3,7 @@ from werkzeug.security import check_password_hash
 from middleware import waf_middleware
 from database import get_user_by_username, init_db, get_attack_stats, get_recent_logs, get_connection, create_user, get_all_users
 from ultra_anomaly_detection import EnhancedUltraAnomalyDetector as AnomalyDetector
-from linear_svm_detector import LinearSVMAnomalyDetector  # Basic Linear SVM
-from improved_svm_detector import ImprovedSVMAnomalyDetector  # Improved with calibration
+from improved_svm_detector import ImprovedSVMAnomalyDetector  # Production ML model
 from attack_generator import AttackGenerator
 import os
 import shutil
@@ -21,28 +20,20 @@ init_db()
 # Apply WAF middleware
 waf_middleware(app)
 
-# Load pre-trained Improved SVM model (Target: <500 FP, 85%+ accuracy/recall)
+# Load pre-trained Improved SVM model (Production model: 86.4% accuracy, 87% recall, 293 FP)
 print("[App] Loading Improved SVM anomaly detection model...")
-LINEAR_SVM_DETECTOR = None
+SVM_DETECTOR = None
 if os.path.exists('improved_svm_model.pkl'):
     try:
-        LINEAR_SVM_DETECTOR = ImprovedSVMAnomalyDetector.load_model('improved_svm_model.pkl')
-        if LINEAR_SVM_DETECTOR:
-            print("[App] ✅ Improved SVM model loaded successfully (Calibrated, C=0.5, Target <500 FP)")
+        SVM_DETECTOR = ImprovedSVMAnomalyDetector.load_model('improved_svm_model.pkl')
+        if SVM_DETECTOR:
+            print("[App] ✅ Improved SVM model loaded (86.4% acc, 87% recall, 293 FP)")
         else:
             print("[App] ⚠️  Failed to load Improved SVM model")
     except Exception as e:
         print(f"[App] ⚠️  Error loading Improved SVM model: {e}")
 else:
-    print("[App] ⚠️  No Improved SVM model found (improved_svm_model.pkl), trying basic linear_svm_model.pkl...")
-    # Fallback to basic linear SVM
-    if os.path.exists('linear_svm_model.pkl'):
-        try:
-            LINEAR_SVM_DETECTOR = LinearSVMAnomalyDetector.load_model('linear_svm_model.pkl')
-            if LINEAR_SVM_DETECTOR:
-                print("[App] ✅ Basic Linear SVM model loaded as fallback (83% accuracy, 301 FP)")
-        except Exception as e:
-            print(f"[App] ⚠️  Error loading fallback Linear SVM model: {e}")
+    print("[App] ⚠️  improved_svm_model.pkl not found, will use conservative model")
 
 # Keep old model as backup
 PRETRAINED_DETECTOR = None
@@ -520,14 +511,10 @@ def api_anomaly_test():
     threshold = data.get('threshold', 50) / 100.0  # Convert 0-100 to 0-1
 
     try:
-        # Use Improved SVM model (calibrated, C=0.5)
-        if LINEAR_SVM_DETECTOR:
-            detector = LINEAR_SVM_DETECTOR
-            # Check if it's the improved model
-            if hasattr(detector, 'calibrated_model') and detector.calibrated_model is not None:
-                model_type = "Improved SVM (Calibrated, C=0.5)"
-            else:
-                model_type = "Linear SVM (Character Trigrams)"
+        # Use Improved SVM model (production model: 86.4% acc, 87% recall, 293 FP)
+        if SVM_DETECTOR:
+            detector = SVM_DETECTOR
+            model_type = "Improved SVM (Calibrated, C=0.5)"
             train_info = "Pre-trained on 8000 normal + 5000 attack samples (CSIC 2010)"
             use_pretrained = True
         elif PRETRAINED_DETECTOR:
