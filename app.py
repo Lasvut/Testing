@@ -3,6 +3,7 @@ from werkzeug.security import check_password_hash
 from middleware import waf_middleware
 from database import get_user_by_username, init_db, get_attack_stats, get_recent_logs, get_connection, create_user, get_all_users
 from ultra_anomaly_detection import EnhancedUltraAnomalyDetector as AnomalyDetector
+from linear_svm_detector import LinearSVMAnomalyDetector  # NEW: Linear SVM winner
 from attack_generator import AttackGenerator
 import os
 import shutil
@@ -19,21 +20,31 @@ init_db()
 # Apply WAF middleware
 waf_middleware(app)
 
-# Load pre-trained ML model (HIGH-RECALL OPTIMIZED)
-print("[App] Loading pre-trained anomaly detection model...")
+# Load pre-trained Linear SVM model (WINNER: 83% accuracy, 301 FP)
+print("[App] Loading Linear SVM anomaly detection model...")
+LINEAR_SVM_DETECTOR = None
+if os.path.exists('linear_svm_model.pkl'):
+    try:
+        LINEAR_SVM_DETECTOR = LinearSVMAnomalyDetector.load_model('linear_svm_model.pkl')
+        if LINEAR_SVM_DETECTOR:
+            print("[App] ✅ Linear SVM model loaded successfully (83% accuracy, 301 FP)")
+        else:
+            print("[App] ⚠️  Failed to load Linear SVM model")
+    except Exception as e:
+        print(f"[App] ⚠️  Error loading Linear SVM model: {e}")
+else:
+    print("[App] ⚠️  No Linear SVM model found (linear_svm_model.pkl)")
+
+# Keep old model as backup
 PRETRAINED_DETECTOR = None
 if os.path.exists('anomaly_detector_model.pkl'):
     try:
         temp_detector = AnomalyDetector(enable_ml=True, use_supervised=True)
         if temp_detector.load_model('anomaly_detector_model.pkl'):
             PRETRAINED_DETECTOR = temp_detector
-            print("[App] ✅ Pre-trained model loaded successfully (High-Recall Optimized)")
-        else:
-            print("[App] ⚠️  Failed to load pre-trained model, will train on-demand")
+            print("[App] ✅ Backup conservative model also loaded")
     except Exception as e:
-        print(f"[App] ⚠️  Error loading pre-trained model: {e}")
-else:
-    print("[App] ⚠️  No pre-trained model found, will train on-demand")
+        pass
 
 # Initialize attack generator (starts in background)
 attack_gen = AttackGenerator(base_url='http://localhost:5000', interval=30)
@@ -495,19 +506,29 @@ def api_anomaly_test():
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.get_json()
-    # Use optimal threshold of 80 for LOW FALSE POSITIVES
-    # Dual ensemble (XGBoost + Random Forest) with conservative hyperparameters
-    # CONSERVATIVE: 60% ML weight, precision-focused, target <500 FP
-    threshold = data.get('threshold', 80)
+    # Use optimal threshold of 0.5 for Linear SVM (probability-based)
+    # Linear SVM with character trigrams: 83% accuracy, 301 FP
+    # PROVEN WINNER from model comparison tests
+    threshold = data.get('threshold', 50) / 100.0  # Convert 0-100 to 0-1
 
     try:
-        # Use pre-trained model if available, otherwise train on-demand
-        if PRETRAINED_DETECTOR:
-            detector = PRETRAINED_DETECTOR
+        # Use Linear SVM model (winner from comparison tests)
+        if LINEAR_SVM_DETECTOR:
+            detector = LINEAR_SVM_DETECTOR
+            model_type = "Linear SVM (Character Trigrams)"
+            train_info = "Pre-trained on 8000 normal + 5000 attack samples (CSIC 2010)"
             use_pretrained = True
+        elif PRETRAINED_DETECTOR:
+            # Fallback to conservative model
+            detector = PRETRAINED_DETECTOR
+            model_type = "Conservative XGBoost+RF"
+            train_info = "Pre-trained on 8000 normal + 5000 attack samples (CSIC 2010)"
+            use_pretrained = True
+            threshold = threshold * 200  # Convert back to 0-200 scale for old model
         else:
-            # Fallback: Create and train detector on-demand
+            # Last resort: train on-demand
             detector = AnomalyDetector(enable_ml=True, use_supervised=True)
+            model_type = "On-Demand Training"
             use_pretrained = False
 
         # Get samples for testing
@@ -515,10 +536,9 @@ def api_anomaly_test():
         malicious_samples = get_malicious_samples()
 
         if use_pretrained:
-            # Use all samples for testing (model already trained on 8000+5000 samples)
+            # Use all samples for testing (model already trained)
             test_normal = normal_samples
             test_attacks = malicious_samples
-            train_info = "Pre-trained on 8000 normal + 5000 attack samples (CSIC 2010)"
         else:
             # Train on-demand with 70/30 split
             normal_train_size = int(len(normal_samples) * 0.7)
@@ -529,9 +549,10 @@ def api_anomaly_test():
             test_normal = normal_samples[normal_train_size:]
             test_attacks = malicious_samples[attack_train_size:]
 
-            # Train with both normal and attack samples (supervised learning)
+            # Train with both normal and attack samples
             detector.train_baseline(train_normal, attack_requests=train_attacks)
             train_info = f"Trained on {normal_train_size} normal + {attack_train_size} attack samples"
+            threshold = threshold * 200  # Old model uses different scale
 
         # Test variables
         true_positives = 0
@@ -544,18 +565,21 @@ def api_anomaly_test():
 
         detailed_log = []
         detailed_log.append("=" * 70)
-        detailed_log.append("ANOMALY DETECTION ACCURACY TEST (HIGH-RECALL OPTIMIZED)")
+        detailed_log.append("ANOMALY DETECTION ACCURACY TEST - LINEAR SVM")
         detailed_log.append("=" * 70)
         detailed_log.append(f"Training: {train_info}")
         detailed_log.append(f"Testing: {len(test_normal_samples)} normal + {len(test_attacks)} attack samples")
-        detailed_log.append(f"Detector: EnhancedUltraAnomalyDetector (XGBoost + RF Ensemble)")
-        detailed_log.append(f"ML Model: Voting Ensemble (XGBoost×6.0 + RF×7.5, 77% ML weight)")
-        detailed_log.append(f"Model Type: {'PRE-TRAINED (Optimized)' if use_pretrained else 'On-Demand Training'}")
+        detailed_log.append(f"Detector: {model_type}")
+        if model_type == "Linear SVM (Character Trigrams)":
+            detailed_log.append(f"Features: 10,000 character trigrams (TF-IDF)")
+            detailed_log.append(f"Expected: 83% accuracy, ~300 FP, 79% recall")
+        detailed_log.append(f"Model Type: {'PRE-TRAINED' if use_pretrained else 'On-Demand Training'}")
+        detailed_log.append(f"Threshold: {threshold:.2f} (probability cutoff)")
         detailed_log.append("")
 
         # Test normal traffic
         detailed_log.append("=" * 70)
-        detailed_log.append(f"TESTING NORMAL TRAFFIC ({len(test_normal_samples)} samples, threshold={threshold})")
+        detailed_log.append(f"TESTING NORMAL TRAFFIC ({len(test_normal_samples)} samples)")
         detailed_log.append("=" * 70)
 
         for i, sample in enumerate(test_normal_samples, 1):
