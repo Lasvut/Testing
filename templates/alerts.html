@@ -473,7 +473,22 @@
             result.innerHTML = '<div class="spinner-border spinner-border-sm mt-3" role="status"></div> Testing...';
 
             try {
-                const response = await fetch('/api/alerts/test', {method: 'POST'});
+                // Get current form values
+                const emailConfig = {
+                    smtp_server: document.getElementById('smtpServer').value,
+                    smtp_port: parseInt(document.getElementById('smtpPort').value),
+                    smtp_username: document.getElementById('smtpUsername').value,
+                    smtp_password: document.getElementById('smtpPassword').value
+                };
+
+                const response = await fetch('/api/alerts/test', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        test_type: 'email',
+                        email_config: emailConfig
+                    })
+                });
                 const data = await response.json();
 
                 if (data.success && data.results.email) {
@@ -494,7 +509,19 @@
             result.innerHTML = '<div class="spinner-border spinner-border-sm mt-3" role="status"></div> Testing...';
 
             try {
-                const response = await fetch('/api/alerts/test', {method: 'POST'});
+                // Get current form value
+                const discordConfig = {
+                    webhook_url: document.getElementById('discordWebhook').value
+                };
+
+                const response = await fetch('/api/alerts/test', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        test_type: 'discord',
+                        discord_config: discordConfig
+                    })
+                });
                 const data = await response.json();
 
                 if (data.success && data.results.discord) {
