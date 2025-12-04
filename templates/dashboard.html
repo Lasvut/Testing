@@ -49,6 +49,49 @@
             font-weight: 600;
             margin-top: 15px;
         }
+        .waf-status-card {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border-left: 8px solid #28a745;
+        }
+        .waf-status-card.disabled {
+            border-left-color: #dc3545;
+        }
+        .waf-status-card.monitoring {
+            border-left-color: #ffc107;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            margin-right: 10px;
+            animation: pulse 2s infinite;
+        }
+        .status-indicator.enabled {
+            background: #28a745;
+        }
+        .status-indicator.disabled {
+            background: #dc3545;
+        }
+        .status-indicator.monitoring {
+            background: #ffc107;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .stat-mini {
+            display: inline-block;
+            padding: 8px 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin: 5px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -66,6 +109,7 @@
                 <a class="nav-link" href="/anomaly-testing"><i class="fas fa-brain"></i> Anomaly Test</a>
                 <a class="nav-link" href="/attack-tools"><i class="fas fa-bug"></i> Attack Tools</a>
                 <a class="nav-link" href="/alerts"><i class="fas fa-bell"></i> Alerts</a>
+                <a class="nav-link" href="/waf-config"><i class="fas fa-cog"></i> WAF Config</a>
                 <a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
             </div>
         </div>
@@ -79,9 +123,37 @@
                 Welcome to WAF System
             </h1>
             <p class="lead text-muted">
-                Hello, <strong>{{ username }}</strong>! 
+                Hello, <strong>{{ username }}</strong>!
                 Real-time Web Application Firewall with Pattern Matching & Anomaly Detection
             </p>
+        </div>
+
+        <!-- WAF Status Indicator -->
+        <div id="wafStatusCard" class="waf-status-card">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h4>
+                        <span id="statusIndicator" class="status-indicator enabled"></span>
+                        <span id="statusText">WAF Status: Loading...</span>
+                    </h4>
+                    <p class="text-muted mb-0" id="statusDetails">Checking WAF configuration...</p>
+                </div>
+                <div class="col-md-6 text-end">
+                    <div id="miniStats">
+                        <span class="stat-mini">
+                            <i class="fas fa-shield-alt"></i> Blocked: <span id="miniBlocked">-</span>
+                        </span>
+                        <span class="stat-mini">
+                            <i class="fas fa-users"></i> Active IPs: <span id="miniActiveIps">-</span>
+                        </span>
+                    </div>
+                    <div class="mt-2">
+                        <a href="/waf-config" class="btn btn-primary">
+                            <i class="fas fa-cog"></i> Configure WAF
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Feature Cards -->
@@ -227,5 +299,66 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Load WAF status on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadWAFStatus();
+            // Auto-refresh every 10 seconds
+            setInterval(loadWAFStatus, 10000);
+        });
+
+        async function loadWAFStatus() {
+            try {
+                const response = await fetch('/api/waf/statistics');
+                const data = await response.json();
+
+                if (data.success) {
+                    const waf = data.waf;
+                    const rateLimiting = data.rate_limiting || {};
+
+                    // Update status card
+                    const card = document.getElementById('wafStatusCard');
+                    const indicator = document.getElementById('statusIndicator');
+                    const statusText = document.getElementById('statusText');
+                    const statusDetails = document.getElementById('statusDetails');
+
+                    if (waf.waf_enabled) {
+                        const mode = waf.detection_mode || 'blocking';
+
+                        if (mode === 'blocking') {
+                            card.className = 'waf-status-card';
+                            indicator.className = 'status-indicator enabled';
+                            statusText.innerHTML = '<i class="fas fa-shield-alt"></i> WAF Status: Enabled (Blocking)';
+                            statusDetails.textContent = 'All protection layers active and blocking threats';
+                        } else {
+                            card.className = 'waf-status-card monitoring';
+                            indicator.className = 'status-indicator monitoring';
+                            const modeText = mode.charAt(0).toUpperCase() + mode.slice(1);
+                            statusText.innerHTML = `<i class="fas fa-eye"></i> WAF Status: Enabled (${modeText})`;
+                            statusDetails.textContent = `Operating in ${mode} mode - logging activity`;
+                        }
+                    } else {
+                        card.className = 'waf-status-card disabled';
+                        indicator.className = 'status-indicator disabled';
+                        statusText.innerHTML = '<i class="fas fa-exclamation-triangle"></i> WAF Status: Disabled';
+                        statusDetails.innerHTML = '<strong>WARNING:</strong> All protection is currently disabled';
+                    }
+
+                    // Update mini stats
+                    document.getElementById('miniBlocked').textContent =
+                        waf.total_attacks_blocked || 0;
+                    document.getElementById('miniActiveIps').textContent =
+                        rateLimiting.active_ips || 0;
+
+                } else {
+                    // Error loading status
+                    console.error('Failed to load WAF status');
+                }
+            } catch (error) {
+                console.error('Error loading WAF status:', error);
+                // Don't show error to user, just log it
+            }
+        }
+    </script>
 </body>
 </html>

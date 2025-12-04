@@ -23,6 +23,18 @@ except ImportError as e:
     alert_config = None
     print(f"[App] Alert system not available: {e}")
 
+# Import WAF configuration and rate limiter
+try:
+    from waf_config import waf_config
+    from rate_limiter import rate_limiter
+    WAF_CONFIG_AVAILABLE = True
+    print("[App] WAF configuration and rate limiter loaded successfully")
+except ImportError as e:
+    WAF_CONFIG_AVAILABLE = False
+    waf_config = None
+    rate_limiter = None
+    print(f"[App] WAF configuration not available: {e}")
+
 app = Flask(__name__)
 app.secret_key = "replace-with-a-secure-random-secret"
 
@@ -868,6 +880,19 @@ def alerts_page():
 
     return render_template('alerts.html', username=session.get('username'))
 
+@app.route('/waf-config')
+def waf_config_page():
+    """WAF configuration page"""
+    if "user_id" not in session:
+        flash("Please log in to continue", "warning")
+        return redirect(url_for('login'))
+
+    if not WAF_CONFIG_AVAILABLE:
+        flash("WAF configuration not available", "danger")
+        return redirect(url_for('dashboard'))
+
+    return render_template('waf_config.html', username=session.get('username'))
+
 @app.route('/api/alerts/config', methods=['GET'])
 def api_get_alert_config():
     """Get current alert configuration"""
@@ -1089,6 +1114,125 @@ def api_flood_statistics():
     try:
         stats = alert_manager.get_statistics()
         return jsonify({"success": True, "statistics": stats})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# WAF Configuration Endpoints
+@app.route('/api/waf/config', methods=['GET'])
+def api_get_waf_config():
+    """Get WAF configuration"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not WAF_CONFIG_AVAILABLE:
+        return jsonify({"error": "WAF configuration not available"}), 503
+
+    try:
+        config = waf_config.to_dict()
+        return jsonify({"success": True, "config": config})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/waf/config', methods=['POST'])
+def api_update_waf_config():
+    """Update WAF configuration"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not WAF_CONFIG_AVAILABLE:
+        return jsonify({"error": "WAF configuration not available"}), 503
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        # Update configuration
+        success = waf_config.update(data)
+
+        if success:
+            return jsonify({
+                "success": True,
+                "message": "WAF configuration updated successfully",
+                "config": waf_config.to_dict()
+            })
+        else:
+            return jsonify({"error": "Failed to save configuration"}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/waf/toggle', methods=['POST'])
+def api_toggle_waf():
+    """Toggle WAF on/off"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not WAF_CONFIG_AVAILABLE:
+        return jsonify({"error": "WAF configuration not available"}), 503
+
+    try:
+        data = request.get_json()
+        enabled = data.get('enabled', True)
+        username = session.get('username', 'Unknown')
+
+        # Toggle WAF
+        success = waf_config.toggle_waf(enabled, username)
+
+        if success:
+            status = "enabled" if enabled else "disabled"
+            return jsonify({
+                "success": True,
+                "message": f"WAF {status} successfully",
+                "waf_enabled": enabled
+            })
+        else:
+            return jsonify({"error": "Failed to toggle WAF"}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/waf/statistics')
+def api_waf_statistics():
+    """Get WAF statistics"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not WAF_CONFIG_AVAILABLE:
+        return jsonify({"error": "WAF configuration not available"}), 503
+
+    try:
+        # Get WAF statistics
+        waf_stats = waf_config.get_statistics()
+
+        # Get rate limiter statistics if available
+        rate_limit_stats = {}
+        if rate_limiter:
+            rate_limit_stats = rate_limiter.get_statistics()
+
+        return jsonify({
+            "success": True,
+            "waf": waf_stats,
+            "rate_limiting": rate_limit_stats
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/waf/rate-limit/reset', methods=['POST'])
+def api_reset_rate_limits():
+    """Reset all rate limit tracking"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not WAF_CONFIG_AVAILABLE or not rate_limiter:
+        return jsonify({"error": "Rate limiter not available"}), 503
+
+    try:
+        rate_limiter.reset()
+        return jsonify({
+            "success": True,
+            "message": "Rate limit tracking reset successfully"
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
