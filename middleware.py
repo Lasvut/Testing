@@ -42,6 +42,7 @@ SAFE_PATHS = [
     '/user-management',   # User management page
     '/attack-tools',      # Attack tools page
     '/alerts',            # Alert configuration page
+    '/waf-config',        # WAF configuration page
 ]
 
 # Paths that should bypass WAF for POST requests (e.g., login forms)
@@ -69,7 +70,15 @@ ADMIN_ENDPOINTS = [
     '/api/alerts/history', # Alert history
     '/api/alerts/statistics', # Alert statistics
     '/api/alerts/flood-stats', # Flood detection statistics
+    '/api/waf/config',     # WAF configuration
+    '/api/waf/toggle',     # WAF toggle
+    '/api/waf/statistics', # WAF statistics
+    '/api/waf/rate-limit/reset', # Rate limit reset
 ]
+
+# Static file extensions to skip
+STATIC_EXTENSIONS = ('.css', '.js', '.jpg', '.jpeg', '.png', '.gif', '.ico', '.svg',
+                     '.woff', '.woff2', '.ttf', '.eot', '.map', '.webp', '.bmp')
 
 # Initialize enhanced anomaly detector with ML enabled
 anomaly_detector = AnomalyDetector(enable_ml=True)
@@ -155,7 +164,35 @@ def waf_middleware(app):
         ip = get_client_ip(request)
 
         # ===========================
-        # CHECK 0: WAF STATUS & RATE LIMITING
+        # CHECK 0: EARLY WHITELISTING (Before rate limiting!)
+        # ===========================
+
+        # Skip static files by extension
+        if any(request.path.endswith(ext) for ext in STATIC_EXTENSIONS):
+            return
+
+        # Skip static directory
+        if request.path.startswith('/static'):
+            return
+
+        # Skip monitoring for safe paths (GET only, no query params)
+        if request.path in SAFE_PATHS and request.method == 'GET' and not request.args:
+            return
+
+        # Skip POST requests to safe POST paths (e.g., login forms)
+        if request.path in SAFE_POST_PATHS and request.method == 'POST':
+            return
+
+        # Skip admin endpoints if user is authenticated
+        # These are legitimate operations that may contain SQL/command keywords
+        if request.path in ADMIN_ENDPOINTS:
+            from flask import session
+            if 'user_id' in session:
+                # Authenticated admin operation - bypass all WAF checks
+                return
+
+        # ===========================
+        # CHECK 1: WAF STATUS & RATE LIMITING
         # ===========================
 
         # Check if WAF is globally enabled
@@ -163,7 +200,7 @@ def waf_middleware(app):
             # WAF is disabled - bypass all checks
             return
 
-        # Check rate limiting (before any other checks for performance)
+        # Check rate limiting (after whitelisting)
         if WAF_CONFIG_ENABLED and rate_limiter:
             allowed, retry_after, info = rate_limiter.check_rate_limit(ip, request.path)
 
@@ -195,25 +232,9 @@ def waf_middleware(app):
             # Record request for rate limiting
             rate_limiter.record_request(ip, request.path)
 
-        # Skip monitoring for safe paths (GET only, no query params)
-        if request.path in SAFE_PATHS and request.method == 'GET' and not request.args:
-            return
-
-        # Skip POST requests to safe POST paths (e.g., login forms)
-        if request.path in SAFE_POST_PATHS and request.method == 'POST':
-            return
-
-        # Skip static files
-        if request.path.startswith('/static'):
-            return
-
-        # Skip admin endpoints if user is authenticated
-        # These are legitimate operations that may contain SQL/command keywords
-        if request.path in ADMIN_ENDPOINTS:
-            from flask import session
-            if 'user_id' in session:
-                # Authenticated admin operation - bypass all WAF checks
-                return
+        # ===========================
+        # CHECK 2: PATTERN MATCHING & ANOMALY DETECTION
+        # ===========================
 
         try:
             get_data = request.args.to_dict(flat=True)
