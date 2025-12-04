@@ -919,7 +919,7 @@ def api_update_alert_config():
 
 @app.route('/api/alerts/test', methods=['POST'])
 def api_test_alerts():
-    """Test alert configuration"""
+    """Test alert configuration with provided settings"""
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
@@ -927,7 +927,121 @@ def api_test_alerts():
         return jsonify({"error": "Alert system not available"}), 503
 
     try:
-        results = alert_manager.test_alerts()
+        # Get test configuration from request body
+        data = request.get_json() or {}
+        test_type = data.get('test_type', 'all')  # 'email', 'discord', or 'all'
+
+        results = {}
+
+        # Test email with provided config or saved config
+        if test_type in ['email', 'all']:
+            if 'email_config' in data:
+                # Test with provided config (temporary)
+                from email_sender import EmailSender
+                import smtplib
+
+                email_cfg = data['email_config']
+                try:
+                    with smtplib.SMTP(email_cfg['smtp_server'], email_cfg['smtp_port'], timeout=10) as server:
+                        server.starttls()
+                        server.login(email_cfg['smtp_username'], email_cfg['smtp_password'])
+
+                    results['email'] = {
+                        'enabled': True,
+                        'success': True,
+                        'message': 'Email connection successful'
+                    }
+                except smtplib.SMTPAuthenticationError:
+                    results['email'] = {
+                        'enabled': True,
+                        'success': False,
+                        'message': 'Authentication failed - check username/password'
+                    }
+                except Exception as e:
+                    results['email'] = {
+                        'enabled': True,
+                        'success': False,
+                        'message': f'Connection failed: {str(e)}'
+                    }
+            else:
+                # Test with saved config
+                success, error = email_sender.test_connection()
+                results['email'] = {
+                    'enabled': alert_config.is_email_enabled(),
+                    'success': success,
+                    'message': error if not success else 'Connection successful'
+                }
+
+        # Test Discord with provided config or saved config
+        if test_type in ['discord', 'all']:
+            if 'discord_config' in data:
+                # Test with provided config (temporary)
+                import requests
+                from datetime import datetime
+
+                discord_cfg = data['discord_config']
+                webhook_url = discord_cfg['webhook_url']
+
+                try:
+                    payload = {
+                        "username": "WAF Alert System",
+                        "embeds": [{
+                            "title": "✅ Test Alert",
+                            "description": "This is a test alert to verify Discord webhook connectivity.",
+                            "color": 3066993,
+                            "fields": [
+                                {
+                                    "name": "Status",
+                                    "value": "Connection successful",
+                                    "inline": True
+                                },
+                                {
+                                    "name": "Timestamp",
+                                    "value": datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'),
+                                    "inline": True
+                                }
+                            ],
+                            "footer": {
+                                "text": "WAF Alert System - Test"
+                            }
+                        }]
+                    }
+
+                    response = requests.post(webhook_url, json=payload, timeout=10)
+
+                    if response.status_code == 204:
+                        results['discord'] = {
+                            'enabled': True,
+                            'success': True,
+                            'message': 'Test message sent successfully'
+                        }
+                    else:
+                        results['discord'] = {
+                            'enabled': True,
+                            'success': False,
+                            'message': f'Discord webhook returned status {response.status_code}'
+                        }
+                except requests.exceptions.Timeout:
+                    results['discord'] = {
+                        'enabled': True,
+                        'success': False,
+                        'message': 'Discord webhook request timed out'
+                    }
+                except Exception as e:
+                    results['discord'] = {
+                        'enabled': True,
+                        'success': False,
+                        'message': f'Test failed: {str(e)}'
+                    }
+            else:
+                # Test with saved config
+                success, error = discord_sender.test_connection()
+                results['discord'] = {
+                    'enabled': alert_config.is_discord_enabled(),
+                    'success': success,
+                    'message': error if not success else 'Test message sent successfully'
+                }
+
         return jsonify({"success": True, "results": results})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
