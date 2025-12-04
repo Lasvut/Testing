@@ -352,12 +352,28 @@
 
                 } else {
                     // Error loading status
-                    console.error('Failed to load WAF status');
+                    console.error('Failed to load WAF status:', data);
+                    showErrorState('Unable to load WAF statistics');
                 }
             } catch (error) {
                 console.error('Error loading WAF status:', error);
-                // Don't show error to user, just log it
+                showErrorState('Connection error - cannot reach server');
             }
+        }
+
+        function showErrorState(message) {
+            const card = document.getElementById('wafStatusCard');
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            const statusDetails = document.getElementById('statusDetails');
+
+            card.className = 'waf-status-card monitoring';
+            indicator.className = 'status-indicator monitoring';
+            statusText.innerHTML = '<i class="fas fa-exclamation-circle"></i> WAF Status: Unknown';
+            statusDetails.textContent = message;
+
+            document.getElementById('miniBlocked').textContent = '?';
+            document.getElementById('miniActiveIps').textContent = '?';
         }
     </script>
 </body>

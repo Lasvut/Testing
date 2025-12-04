@@ -31,9 +31,9 @@ class WAFConfig:
         "rate_limit_global": 1000,  # requests per minute globally
         "rate_limit_burst": 20,  # burst allowance
 
-        # Path-specific rate limits
+        # Path-specific rate limits (applied per IP)
         "path_rate_limits": {
-            "/login": 5,  # 5 requests/minute
+            "/login": 30,  # 30 requests/minute (allows page loads + a few login attempts)
             "/api/*": 100,  # 100 requests/minute
         },
 
