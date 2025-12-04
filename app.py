@@ -38,6 +38,9 @@ except ImportError as e:
 app = Flask(__name__)
 app.secret_key = "replace-with-a-secure-random-secret"
 
+# Configure JSON to properly handle Unicode (emojis)
+app.config['JSON_AS_ASCII'] = False
+
 # Initialize DB
 init_db()
 
