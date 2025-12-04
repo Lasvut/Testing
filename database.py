@@ -34,6 +34,19 @@ def init_db():
         user_agent TEXT
     )
     ''')
+    # alert_history table for tracking sent alerts
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS alert_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        alert_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        message TEXT NOT NULL,
+        recipients TEXT,
+        status TEXT NOT NULL,
+        details TEXT
+    )
+    ''')
     conn.commit()
     conn.close()
 
@@ -147,10 +160,75 @@ def get_logs_by_date_range(start_date, end_date):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-        SELECT * FROM logs 
+        SELECT * FROM logs
         WHERE datetime(time) BETWEEN datetime(?) AND datetime(?)
         ORDER BY id DESC
     """, (start_date, end_date))
     rows = c.fetchall()
     conn.close()
     return rows
+
+def get_alert_history(limit=50, offset=0, alert_type=None):
+    '''Get alert history'''
+    conn = get_connection()
+    c = conn.cursor()
+
+    if alert_type:
+        c.execute("""
+            SELECT * FROM alert_history
+            WHERE alert_type = ?
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+        """, (alert_type, limit, offset))
+    else:
+        c.execute("SELECT * FROM alert_history ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def get_alert_statistics():
+    '''Get alert statistics'''
+    conn = get_connection()
+    c = conn.cursor()
+
+    # Total alerts
+    c.execute("SELECT COUNT(*) as total FROM alert_history")
+    total = c.fetchone()['total']
+
+    # Alerts by type
+    c.execute("SELECT alert_type, COUNT(*) as count FROM alert_history GROUP BY alert_type ORDER BY count DESC")
+    by_type = [dict(row) for row in c.fetchall()]
+
+    # Alerts by severity
+    c.execute("SELECT severity, COUNT(*) as count FROM alert_history GROUP BY severity ORDER BY count DESC")
+    by_severity = [dict(row) for row in c.fetchall()]
+
+    # Recent alerts (last 24 hours)
+    c.execute("""
+        SELECT COUNT(*) as count FROM alert_history
+        WHERE datetime(timestamp) > datetime('now', '-1 day')
+    """)
+    last_24h = c.fetchone()['count']
+
+    # Failed alerts
+    c.execute("SELECT COUNT(*) as count FROM alert_history WHERE status = 'failed'")
+    failed = c.fetchone()['count']
+
+    conn.close()
+
+    return {
+        'total': total,
+        'by_type': by_type,
+        'by_severity': by_severity,
+        'last_24h': last_24h,
+        'failed': failed
+    }
+
+def clear_alert_history():
+    '''Clear all alert history'''
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM alert_history")
+    conn.commit()
+    conn.close()

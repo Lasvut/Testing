@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alert Configuration - WAF</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .navbar {
+            background: rgba(255,255,255,0.95) !important;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .content-card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .section-header {
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+        .form-section {
+            margin: 30px 0;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 15px;
+        }
+        .test-result {
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+        }
+        .test-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .test-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .nav-tabs .nav-link {
+            color: #667eea;
+            font-weight: 600;
+        }
+        .nav-tabs .nav-link.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+        }
+        .badge-setting {
+            font-size: 0.85rem;
+            padding: 5px 12px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="/dashboard">
+                <i class="fas fa-shield-alt me-2"></i>WAF System
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard"><i class="fas fa-home me-2"></i>Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/monitor"><i class="fas fa-chart-line me-2"></i>Monitor</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/tools"><i class="fas fa-tools me-2"></i>Tools</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/alerts"><i class="fas fa-bell me-2"></i>Alerts</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <span class="nav-link"><i class="fas fa-user me-2"></i>{{ username }}</span>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container mt-4">
+        <div class="content-card">
+            <div class="section-header">
+                <h2><i class="fas fa-bell me-3"></i>Alert Configuration</h2>
+                <p class="text-muted mb-0">Configure email and Discord webhook alerts for attack floods and system events</p>
+            </div>
+
+            <!-- Tabs -->
+            <ul class="nav nav-tabs mb-4" id="alertTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="config-tab" data-bs-toggle="tab" data-bs-target="#config" type="button">
+                        <i class="fas fa-cog me-2"></i>Configuration
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button">
+                        <i class="fas fa-history me-2"></i>Alert History
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="stats-tab" data-bs-toggle="tab" data-bs-target="#stats" type="button">
+                        <i class="fas fa-chart-bar me-2"></i>Statistics
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content" id="alertTabContent">
+                <!-- Configuration Tab -->
+                <div class="tab-pane fade show active" id="config" role="tabpanel">
+                    <!-- Email Configuration -->
+                    <div class="form-section">
+                        <h4><i class="fas fa-envelope me-2"></i>Email Alerts</h4>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="emailEnabled">
+                            <label class="form-check-label" for="emailEnabled">
+                                Enable Email Alerts <span class="badge bg-secondary badge-setting" id="emailStatus">Disabled</span>
+                            </label>
+                        </div>
+
+                        <div id="emailConfig" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">SMTP Server</label>
+                                    <input type="text" class="form-control" id="smtpServer" placeholder="smtp.gmail.com">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">SMTP Port</label>
+                                    <input type="number" class="form-control" id="smtpPort" placeholder="587">
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">SMTP Username</label>
+                                    <input type="text" class="form-control" id="smtpUsername" placeholder="your-email@gmail.com">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">SMTP Password</label>
+                                    <input type="password" class="form-control" id="smtpPassword" placeholder="App password">
+                                    <small class="text-muted">For Gmail, use an App Password</small>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">From Email</label>
+                                    <input type="email" class="form-control" id="emailFrom" placeholder="waf@yourcompany.com">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Recipients (comma-separated)</label>
+                                    <input type="text" class="form-control" id="emailRecipients" placeholder="admin@example.com, security@example.com">
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" onclick="testEmail()">
+                                <i class="fas fa-paper-plane me-2"></i>Test Email Connection
+                            </button>
+                            <div id="emailTestResult"></div>
+                        </div>
+                    </div>
+
+                    <!-- Discord Configuration -->
+                    <div class="form-section">
+                        <h4><i class="fab fa-discord me-2"></i>Discord Webhook Alerts</h4>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="discordEnabled">
+                            <label class="form-check-label" for="discordEnabled">
+                                Enable Discord Alerts <span class="badge bg-secondary badge-setting" id="discordStatus">Disabled</span>
+                            </label>
+                        </div>
+
+                        <div id="discordConfig" style="display: none;">
+                            <div class="mb-3">
+                                <label class="form-label">Discord Webhook URL</label>
+                                <input type="text" class="form-control" id="discordWebhook" placeholder="https://discord.com/api/webhooks/...">
+                                <small class="text-muted">Server Settings → Integrations → Webhooks → New Webhook</small>
+                            </div>
+                            <button class="btn btn-primary" onclick="testDiscord()">
+                                <i class="fas fa-paper-plane me-2"></i>Test Discord Webhook
+                            </button>
+                            <div id="discordTestResult"></div>
+                        </div>
+                    </div>
+
+                    <!-- Alert Types -->
+                    <div class="form-section">
+                        <h4><i class="fas fa-filter me-2"></i>Alert Types</h4>
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="alertFlood">
+                                    <label class="form-check-label" for="alertFlood">
+                                        <strong>Flood Detection</strong> - Attack floods and DDoS attempts
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="alertCritical">
+                                    <label class="form-check-label" for="alertCritical">
+                                        <strong>Critical Attacks</strong> - SQL injection, RCE, etc.
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="alertConfig">
+                                    <label class="form-check-label" for="alertConfig">
+                                        <strong>Configuration Changes</strong> - WAF settings modified
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="alertSystem">
+                                    <label class="form-check-label" for="alertSystem">
+                                        <strong>System Health</strong> - Errors and system issues
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Flood Detection Thresholds -->
+                    <div class="form-section">
+                        <h4><i class="fas fa-sliders-h me-2"></i>Flood Detection Thresholds</h4>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Per-IP Threshold (attacks/minute)</label>
+                                <input type="number" class="form-control" id="floodPerIp" value="10" min="1" max="100">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Total Threshold (attacks/minute)</label>
+                                <input type="number" class="form-control" id="floodTotal" value="50" min="10" max="500">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Velocity Multiplier</label>
+                                <input type="number" class="form-control" id="velocityMultiplier" value="3" min="2" max="10" step="0.5">
+                                <small class="text-muted">Alert when rate is 3x baseline</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Save Button -->
+                    <div class="text-center mt-4">
+                        <button class="btn btn-success btn-lg" onclick="saveConfig()">
+                            <i class="fas fa-save me-2"></i>Save Configuration
+                        </button>
+                    </div>
+                </div>
+
+                <!-- History Tab -->
+                <div class="tab-pane fade" id="history" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table table-striped" id="alertHistoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Type</th>
+                                    <th>Severity</th>
+                                    <th>Message</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr>
+                                    <td colspan="5" class="text-center">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Statistics Tab -->
+                <div class="tab-pane fade" id="stats" role="tabpanel">
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h3 id="statTotal">0</h3>
+                                    <p class="text-muted mb-0">Total Alerts</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h3 id="stat24h">0</h3>
+                                    <p class="text-muted mb-0">Last 24 Hours</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h3 id="statFailed">0</h3>
+                                    <p class="text-muted mb-0">Failed Alerts</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <div class="card text-center">
+                                <div class="card-body">
+                                    <h3 id="statFloods">0</h3>
+                                    <p class="text-muted mb-0">Ongoing Floods</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mt-4">
+                        <div class="col-md-6">
+                            <h5>Alerts by Type</h5>
+                            <div id="alertsByType"></div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Alerts by Severity</h5>
+                            <div id="alertsBySeverity"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentConfig = {};
+
+        // Load configuration on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadConfig();
+            loadHistory();
+            loadStatistics();
+
+            // Toggle email config visibility
+            document.getElementById('emailEnabled').addEventListener('change', function() {
+                document.getElementById('emailConfig').style.display = this.checked ? 'block' : 'none';
+                updateStatusBadge('emailStatus', this.checked);
+            });
+
+            // Toggle Discord config visibility
+            document.getElementById('discordEnabled').addEventListener('change', function() {
+                document.getElementById('discordConfig').style.display = this.checked ? 'block' : 'none';
+                updateStatusBadge('discordStatus', this.checked);
+            });
+
+            // Refresh history and stats when tabs are clicked
+            document.getElementById('history-tab').addEventListener('click', loadHistory);
+            document.getElementById('stats-tab').addEventListener('click', loadStatistics);
+        });
+
+        function updateStatusBadge(elementId, enabled) {
+            const badge = document.getElementById(elementId);
+            if (enabled) {
+                badge.textContent = 'Enabled';
+                badge.className = 'badge bg-success badge-setting';
+            } else {
+                badge.textContent = 'Disabled';
+                badge.className = 'badge bg-secondary badge-setting';
+            }
+        }
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/alerts/config');
+                const data = await response.json();
+
+                if (data.success) {
+                    currentConfig = data.config;
+
+                    // Email settings
+                    document.getElementById('emailEnabled').checked = currentConfig.email_enabled || false;
+                    document.getElementById('smtpServer').value = currentConfig.smtp_server || '';
+                    document.getElementById('smtpPort').value = currentConfig.smtp_port || 587;
+                    document.getElementById('smtpUsername').value = currentConfig.smtp_username || '';
+                    document.getElementById('smtpPassword').value = currentConfig.smtp_password || '';
+                    document.getElementById('emailFrom').value = currentConfig.email_from || '';
+                    document.getElementById('emailRecipients').value = (currentConfig.email_recipients || []).join(', ');
+
+                    // Discord settings
+                    document.getElementById('discordEnabled').checked = currentConfig.discord_enabled || false;
+                    document.getElementById('discordWebhook').value = currentConfig.discord_webhook_url || '';
+
+                    // Alert types
+                    const alertTypes = currentConfig.alert_types || {};
+                    document.getElementById('alertFlood').checked = alertTypes.flood || false;
+                    document.getElementById('alertCritical').checked = alertTypes.critical_attack || false;
+                    document.getElementById('alertConfig').checked = alertTypes.config_change || false;
+                    document.getElementById('alertSystem').checked = alertTypes.system_health || false;
+
+                    // Thresholds
+                    document.getElementById('floodPerIp').value = currentConfig.flood_threshold_per_ip || 10;
+                    document.getElementById('floodTotal').value = currentConfig.flood_threshold_total || 50;
+                    document.getElementById('velocityMultiplier').value = currentConfig.flood_velocity_multiplier || 3;
+
+                    // Trigger display updates
+                    document.getElementById('emailConfig').style.display = currentConfig.email_enabled ? 'block' : 'none';
+                    document.getElementById('discordConfig').style.display = currentConfig.discord_enabled ? 'block' : 'none';
+                    updateStatusBadge('emailStatus', currentConfig.email_enabled);
+                    updateStatusBadge('discordStatus', currentConfig.discord_enabled);
+                }
+            } catch (error) {
+                console.error('Error loading config:', error);
+            }
+        }
+
+        async function saveConfig() {
+            const config = {
+                email_enabled: document.getElementById('emailEnabled').checked,
+                smtp_server: document.getElementById('smtpServer').value,
+                smtp_port: parseInt(document.getElementById('smtpPort').value),
+                smtp_username: document.getElementById('smtpUsername').value,
+                smtp_password: document.getElementById('smtpPassword').value,
+                email_from: document.getElementById('emailFrom').value,
+                email_recipients: document.getElementById('emailRecipients').value.split(',').map(s => s.trim()).filter(s => s),
+                discord_enabled: document.getElementById('discordEnabled').checked,
+                discord_webhook_url: document.getElementById('discordWebhook').value,
+                alert_types: {
+                    flood: document.getElementById('alertFlood').checked,
+                    critical_attack: document.getElementById('alertCritical').checked,
+                    config_change: document.getElementById('alertConfig').checked,
+                    system_health: document.getElementById('alertSystem').checked
+                },
+                flood_threshold_per_ip: parseInt(document.getElementById('floodPerIp').value),
+                flood_threshold_total: parseInt(document.getElementById('floodTotal').value),
+                flood_velocity_multiplier: parseFloat(document.getElementById('velocityMultiplier').value)
+            };
+
+            try {
+                const response = await fetch('/api/alerts/config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(config)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✅ Configuration saved successfully!');
+                } else {
+                    alert('❌ Error: ' + (data.error || 'Failed to save'));
+                }
+            } catch (error) {
+                alert('❌ Error saving configuration: ' + error);
+            }
+        }
+
+        async function testEmail() {
+            const result = document.getElementById('emailTestResult');
+            result.innerHTML = '<div class="spinner-border spinner-border-sm mt-3" role="status"></div> Testing...';
+
+            try {
+                const response = await fetch('/api/alerts/test', {method: 'POST'});
+                const data = await response.json();
+
+                if (data.success && data.results.email) {
+                    const email = data.results.email;
+                    if (email.success) {
+                        result.innerHTML = `<div class="test-result test-success"><i class="fas fa-check-circle me-2"></i>${email.message}</div>`;
+                    } else {
+                        result.innerHTML = `<div class="test-result test-error"><i class="fas fa-times-circle me-2"></i>${email.message}</div>`;
+                    }
+                }
+            } catch (error) {
+                result.innerHTML = `<div class="test-result test-error"><i class="fas fa-times-circle me-2"></i>Error: ${error}</div>`;
+            }
+        }
+
+        async function testDiscord() {
+            const result = document.getElementById('discordTestResult');
+            result.innerHTML = '<div class="spinner-border spinner-border-sm mt-3" role="status"></div> Testing...';
+
+            try {
+                const response = await fetch('/api/alerts/test', {method: 'POST'});
+                const data = await response.json();
+
+                if (data.success && data.results.discord) {
+                    const discord = data.results.discord;
+                    if (discord.success) {
+                        result.innerHTML = `<div class="test-result test-success"><i class="fas fa-check-circle me-2"></i>${discord.message}</div>`;
+                    } else {
+                        result.innerHTML = `<div class="test-result test-error"><i class="fas fa-times-circle me-2"></i>${discord.message}</div>`;
+                    }
+                }
+            } catch (error) {
+                result.innerHTML = `<div class="test-result test-error"><i class="fas fa-times-circle me-2"></i>Error: ${error}</div>`;
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                const response = await fetch('/api/alerts/history?limit=50');
+                const data = await response.json();
+
+                const tbody = document.getElementById('historyTableBody');
+                if (data.success && data.alerts.length > 0) {
+                    tbody.innerHTML = data.alerts.map(alert => `
+                        <tr>
+                            <td>${alert.timestamp}</td>
+                            <td><span class="badge bg-info">${alert.alert_type}</span></td>
+                            <td><span class="badge bg-${getSeverityColor(alert.severity)}">${alert.severity}</span></td>
+                            <td>${alert.message.substring(0, 100)}...</td>
+                            <td><span class="badge bg-${alert.status === 'sent' ? 'success' : 'danger'}">${alert.status}</span></td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center">No alerts sent yet</td></tr>';
+                }
+            } catch (error) {
+                console.error('Error loading history:', error);
+            }
+        }
+
+        async function loadStatistics() {
+            try {
+                const [alertStats, floodStats] = await Promise.all([
+                    fetch('/api/alerts/statistics').then(r => r.json()),
+                    fetch('/api/alerts/flood-stats').then(r => r.json())
+                ]);
+
+                if (alertStats.success) {
+                    const stats = alertStats.statistics;
+                    document.getElementById('statTotal').textContent = stats.total || 0;
+                    document.getElementById('stat24h').textContent = stats.last_24h || 0;
+                    document.getElementById('statFailed').textContent = stats.failed || 0;
+
+                    // Display by type
+                    const byType = stats.by_type || [];
+                    document.getElementById('alertsByType').innerHTML = byType.map(item =>
+                        `<div class="mb-2">${item.alert_type}: <strong>${item.count}</strong></div>`
+                    ).join('') || '<p class="text-muted">No data</p>';
+
+                    // Display by severity
+                    const bySeverity = stats.by_severity || [];
+                    document.getElementById('alertsBySeverity').innerHTML = bySeverity.map(item =>
+                        `<div class="mb-2"><span class="badge bg-${getSeverityColor(item.severity)}">${item.severity}</span>: <strong>${item.count}</strong></div>`
+                    ).join('') || '<p class="text-muted">No data</p>';
+                }
+
+                if (floodStats.success) {
+                    document.getElementById('statFloods').textContent = floodStats.statistics.ongoing_floods || 0;
+                }
+            } catch (error) {
+                console.error('Error loading statistics:', error);
+            }
+        }
+
+        function getSeverityColor(severity) {
+            const colors = {
+                'CRITICAL': 'danger',
+                'WARNING': 'warning',
+                'INFO': 'info'
+            };
+            return colors[severity] || 'secondary';
+        }
+    </script>
+</body>
+</html>

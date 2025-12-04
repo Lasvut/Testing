@@ -8,6 +8,15 @@ from database import log_attack, get_client_ip
 # Import the enhanced detector (now with ML and statistical analysis)
 from ultra_anomaly_detection import EnhancedUltraAnomalyDetector as AnomalyDetector
 
+# Import alert manager for flood detection and alerting
+try:
+    from alert_manager import alert_manager
+    ALERTS_ENABLED = True
+    print("[WAF] Alert system enabled")
+except ImportError as e:
+    ALERTS_ENABLED = False
+    print(f"[WAF] Alert system disabled: {e}")
+
 SAFE_PATHS = [
     '/login',
     '/',
@@ -20,6 +29,7 @@ SAFE_PATHS = [
     '/anomaly-testing',   # Anomaly testing page
     '/user-management',   # User management page
     '/attack-tools',      # Attack tools page
+    '/alerts',            # Alert configuration page
 ]
 
 # Paths that should bypass WAF for POST requests (e.g., login forms)
@@ -42,6 +52,11 @@ ADMIN_ENDPOINTS = [
     '/api/attack-generator/start',  # Auto attack generator control
     '/api/attack-generator/stop',   # Auto attack generator control
     '/api/attack-generator/status', # Auto attack generator status
+    '/api/alerts/config',  # Alert configuration
+    '/api/alerts/test',    # Alert testing
+    '/api/alerts/history', # Alert history
+    '/api/alerts/statistics', # Alert statistics
+    '/api/alerts/flood-stats', # Flood detection statistics
 ]
 
 # Initialize enhanced anomaly detector with ML enabled
@@ -168,6 +183,14 @@ def waf_middleware(app):
                         log_attack(ip, attack_type, data[:500], request.path, user_agent)
                         print(f"[WAF BLOCKED - Layer 1] {attack_type} from {ip}")
                         print(f"  Pattern matched: {pattern[:50]}...")
+
+                        # Process attack for alerting (flood detection, critical attack alerts)
+                        if ALERTS_ENABLED:
+                            try:
+                                alert_manager.process_attack(ip, attack_type, data[:500], request.path, user_agent)
+                            except Exception as e:
+                                print(f"[WAF] Alert processing error: {e}")
+
                         return "⚠️ Request blocked: suspicious activity detected.", 403
                 except re.error as e:
                     # Malformed regex pattern - log it but continue checking other patterns
@@ -201,21 +224,28 @@ def waf_middleware(app):
             if is_anomalous:
                 ip = get_client_ip(request)
                 user_agent = request.headers.get('User-Agent', 'Unknown')
-                
+
                 # Build detailed log
                 breakdown = details.get('breakdown', {})
                 reasons = ', '.join([f"{k}" for k in list(breakdown.keys())[:3]])
-                
+
                 payload = f"Anomaly Score: {score:.0f} (threshold: {details.get('threshold', 25)}) | {reasons}"
                 log_attack(ip, 'Anomalous Behavior', payload[:500], request.path, user_agent)
-                
+
                 print(f"[WAF BLOCKED - Layer 2] Anomalous behavior from {ip}")
                 print(f"  Score: {score:.0f} / Threshold: {details.get('threshold', 25)}")
                 print(f"  Top reasons: {reasons}")
-                
+
                 if anomaly_detector.enable_ml:
                     print(f"  ML Enabled: Yes")
-                
+
+                # Process attack for alerting
+                if ALERTS_ENABLED:
+                    try:
+                        alert_manager.process_attack(ip, 'Anomalous Behavior', payload[:500], request.path, user_agent)
+                    except Exception as e:
+                        print(f"[WAF] Alert processing error: {e}")
+
                 return "⚠️ Request blocked: suspicious activity detected.", 403
         
         # Otherwise allow request to proceed
