@@ -47,6 +47,19 @@ def init_db():
         details TEXT
     )
     ''')
+    # rate_limit_violations table for tracking rate limit exceeded events
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS rate_limit_violations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        ip TEXT NOT NULL,
+        path TEXT,
+        reason TEXT NOT NULL,
+        limit_value INTEGER,
+        current_value INTEGER,
+        retry_after INTEGER
+    )
+    ''')
     conn.commit()
     conn.close()
 
@@ -232,3 +245,23 @@ def clear_alert_history():
     c.execute("DELETE FROM alert_history")
     conn.commit()
     conn.close()
+
+def log_rate_limit_violation(ip, path, reason, limit_value, current_value, retry_after):
+    '''Log rate limit violation'''
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO rate_limit_violations (timestamp, ip, path, reason, limit_value, current_value, retry_after)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (str(datetime.datetime.utcnow()), ip, path, reason, limit_value, current_value, retry_after))
+    conn.commit()
+    conn.close()
+
+def get_rate_limit_violations(limit=50, offset=0):
+    '''Get recent rate limit violations'''
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM rate_limit_violations ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+    rows = c.fetchall()
+    conn.close()
+    return rows

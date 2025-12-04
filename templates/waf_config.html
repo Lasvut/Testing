@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WAF Configuration - Security Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .navbar {
+            background: rgba(255, 255, 255, 0.95) !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .main-content {
+            padding: 20px 0;
+        }
+        .config-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .card-header-custom {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            font-size: 1.3em;
+            font-weight: bold;
+        }
+        .card-body {
+            padding: 25px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        .status-enabled {
+            background: #28a745;
+            color: white;
+        }
+        .status-disabled {
+            background: #dc3545;
+            color: white;
+        }
+        .status-monitoring {
+            background: #ffc107;
+            color: black;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #28a745;
+        }
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        .stat-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #495057;
+        }
+        .emergency-warning {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .form-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .section-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            padding: 10px 30px;
+            font-weight: bold;
+        }
+        .btn-danger {
+            padding: 10px 30px;
+            font-weight: bold;
+        }
+        .alert {
+            border-radius: 10px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light">
+        <div class="container">
+            <a class="navbar-brand" href="/dashboard">
+                <i class="fas fa-shield-alt"></i> WAF Dashboard
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard"><i class="fas fa-home"></i> Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/monitor"><i class="fas fa-chart-line"></i> Monitor</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/alerts"><i class="fas fa-bell"></i> Alerts</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/waf-config"><i class="fas fa-cog"></i> WAF Config</a>
+                    </li>
+                    <li class="nav-item">
+                        <span class="nav-link"><i class="fas fa-user"></i> {{ username }}</span>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-content">
+        <!-- Status Alert -->
+        <div id="statusAlert" style="display: none;"></div>
+
+        <!-- Master WAF Toggle -->
+        <div class="config-card">
+            <div class="card-header-custom">
+                <i class="fas fa-power-off"></i> Master WAF Control
+            </div>
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h5>WAF Status</h5>
+                        <p class="text-muted">Enable or disable all WAF protection</p>
+                        <div id="wafStatusDisplay" class="my-3">
+                            <span class="status-badge status-enabled">
+                                <i class="fas fa-check-circle"></i> Loading...
+                            </span>
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="masterToggle" onchange="toggleWAF()">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="emergencyWarning" class="emergency-warning" style="display: none;">
+                    <h6><i class="fas fa-exclamation-triangle"></i> Emergency Bypass Warning</h6>
+                    <p>You are about to disable ALL WAF protection. Your application will be vulnerable to attacks.</p>
+                    <p><strong>Are you sure you want to continue?</strong></p>
+                    <button class="btn btn-danger" onclick="confirmDisableWAF()">
+                        <i class="fas fa-exclamation-triangle"></i> Yes, Disable WAF
+                    </button>
+                    <button class="btn btn-secondary" onclick="cancelDisableWAF()">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detection Configuration -->
+        <div class="config-card">
+            <div class="card-header-custom">
+                <i class="fas fa-layer-group"></i> Detection Layers
+            </div>
+            <div class="card-body">
+                <div class="form-section">
+                    <div class="section-title">Pattern-Based Detection (Layer 1)</div>
+                    <div class="row align-items-center">
+                        <div class="col-md-9">
+                            <p class="mb-0">Detect attacks using regex pattern matching (SQL injection, XSS, etc.)</p>
+                        </div>
+                        <div class="col-md-3 text-end">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="patternDetectionToggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="section-title">Anomaly Detection (Layer 2)</div>
+                    <div class="row align-items-center">
+                        <div class="col-md-9">
+                            <p class="mb-0">Detect unusual behavior using ML and statistical analysis</p>
+                        </div>
+                        <div class="col-md-3 text-end">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="anomalyDetectionToggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="section-title">Detection Mode</div>
+                    <select class="form-select" id="detectionMode">
+                        <option value="blocking">Blocking - Block suspicious requests</option>
+                        <option value="monitoring">Monitoring - Log but don't block</option>
+                        <option value="learning">Learning - Train baseline only</option>
+                    </select>
+                    <small class="text-muted">Choose how the WAF handles detected threats</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rate Limiting Configuration -->
+        <div class="config-card">
+            <div class="card-header-custom">
+                <i class="fas fa-tachometer-alt"></i> Rate Limiting
+            </div>
+            <div class="card-body">
+                <div class="form-section">
+                    <div class="row align-items-center mb-3">
+                        <div class="col-md-9">
+                            <h6>Enable Rate Limiting</h6>
+                        </div>
+                        <div class="col-md-3 text-end">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="rateLimitingToggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label class="form-label">Per-IP Limit (requests/min)</label>
+                            <input type="number" class="form-control" id="rateLimitPerIp" min="1" max="10000" value="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Global Limit (requests/min)</label>
+                            <input type="number" class="form-control" id="rateLimitGlobal" min="1" max="100000" value="1000">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Burst Limit (10 seconds)</label>
+                            <input type="number" class="form-control" id="rateLimitBurst" min="1" max="1000" value="20">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-end mt-3">
+                    <button class="btn btn-secondary" onclick="resetRateLimits()">
+                        <i class="fas fa-undo"></i> Reset Tracking Data
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="config-card">
+            <div class="card-header-custom">
+                <i class="fas fa-chart-bar"></i> WAF Statistics
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="stat-box">
+                            <div class="stat-label">Total Requests</div>
+                            <div class="stat-value" id="statTotalRequests">-</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-box">
+                            <div class="stat-label">Attacks Blocked</div>
+                            <div class="stat-value" id="statAttacksBlocked">-</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-box">
+                            <div class="stat-label">Active IPs (1 min)</div>
+                            <div class="stat-value" id="statActiveIps">-</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-box">
+                            <div class="stat-label">Requests (1 min)</div>
+                            <div class="stat-value" id="statRequestsLastMin">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-muted mt-3">
+                    <small><i class="fas fa-clock"></i> Last updated: <span id="lastUpdated">Never</span></small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Save Configuration -->
+        <div class="text-center mb-4">
+            <button class="btn btn-primary btn-lg" onclick="saveConfiguration()">
+                <i class="fas fa-save"></i> Save Configuration
+            </button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentConfig = {};
+        let wafCurrentlyEnabled = true;
+
+        // Load configuration on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadConfiguration();
+            loadStatistics();
+            // Auto-refresh statistics every 10 seconds
+            setInterval(loadStatistics, 10000);
+        });
+
+        async function loadConfiguration() {
+            try {
+                const response = await fetch('/api/waf/config');
+                const data = await response.json();
+
+                if (data.success) {
+                    currentConfig = data.config;
+                    applyConfiguration(currentConfig);
+                } else {
+                    showAlert('danger', 'Failed to load configuration');
+                }
+            } catch (error) {
+                showAlert('danger', 'Error loading configuration: ' + error.message);
+            }
+        }
+
+        function applyConfiguration(config) {
+            // Master toggle
+            const masterToggle = document.getElementById('masterToggle');
+            masterToggle.checked = config.waf_enabled || false;
+            wafCurrentlyEnabled = config.waf_enabled || false;
+            updateStatusDisplay();
+
+            // Detection layers
+            document.getElementById('patternDetectionToggle').checked = config.pattern_detection_enabled !== false;
+            document.getElementById('anomalyDetectionToggle').checked = config.anomaly_detection_enabled !== false;
+
+            // Detection mode
+            document.getElementById('detectionMode').value = config.detection_mode || 'blocking';
+
+            // Rate limiting
+            document.getElementById('rateLimitingToggle').checked = config.rate_limiting_enabled !== false;
+            document.getElementById('rateLimitPerIp').value = config.rate_limit_per_ip || 100;
+            document.getElementById('rateLimitGlobal').value = config.rate_limit_global || 1000;
+            document.getElementById('rateLimitBurst').value = config.rate_limit_burst || 20;
+        }
+
+        async function loadStatistics() {
+            try {
+                const response = await fetch('/api/waf/statistics');
+                const data = await response.json();
+
+                if (data.success) {
+                    // WAF stats
+                    document.getElementById('statTotalRequests').textContent =
+                        data.waf.total_requests || 0;
+                    document.getElementById('statAttacksBlocked').textContent =
+                        data.waf.total_attacks_blocked || 0;
+
+                    // Rate limiting stats
+                    if (data.rate_limiting) {
+                        document.getElementById('statActiveIps').textContent =
+                            data.rate_limiting.active_ips || 0;
+                        document.getElementById('statRequestsLastMin').textContent =
+                            data.rate_limiting.global_requests_last_minute || 0;
+                    }
+
+                    // Update timestamp
+                    const now = new Date();
+                    document.getElementById('lastUpdated').textContent =
+                        now.toLocaleTimeString();
+                }
+            } catch (error) {
+                console.error('Error loading statistics:', error);
+            }
+        }
+
+        function toggleWAF() {
+            const isEnabled = document.getElementById('masterToggle').checked;
+
+            if (!isEnabled && wafCurrentlyEnabled) {
+                // Show warning when disabling
+                document.getElementById('emergencyWarning').style.display = 'block';
+                // Revert toggle until confirmed
+                document.getElementById('masterToggle').checked = true;
+            } else if (isEnabled && !wafCurrentlyEnabled) {
+                // Enable without confirmation
+                performWAFToggle(true);
+            }
+        }
+
+        function confirmDisableWAF() {
+            document.getElementById('emergencyWarning').style.display = 'none';
+            document.getElementById('masterToggle').checked = false;
+            performWAFToggle(false);
+        }
+
+        function cancelDisableWAF() {
+            document.getElementById('emergencyWarning').style.display = 'none';
+            document.getElementById('masterToggle').checked = true;
+        }
+
+        async function performWAFToggle(enabled) {
+            try {
+                const response = await fetch('/api/waf/toggle', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ enabled: enabled })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    wafCurrentlyEnabled = enabled;
+                    updateStatusDisplay();
+                    showAlert('success', data.message);
+                } else {
+                    showAlert('danger', data.error || 'Failed to toggle WAF');
+                    // Revert toggle
+                    document.getElementById('masterToggle').checked = wafCurrentlyEnabled;
+                }
+            } catch (error) {
+                showAlert('danger', 'Error toggling WAF: ' + error.message);
+                document.getElementById('masterToggle').checked = wafCurrentlyEnabled;
+            }
+        }
+
+        function updateStatusDisplay() {
+            const statusDisplay = document.getElementById('wafStatusDisplay');
+            const mode = document.getElementById('detectionMode').value;
+
+            if (wafCurrentlyEnabled) {
+                if (mode === 'blocking') {
+                    statusDisplay.innerHTML = '<span class="status-badge status-enabled"><i class="fas fa-shield-alt"></i> WAF Enabled (Blocking)</span>';
+                } else {
+                    statusDisplay.innerHTML = '<span class="status-badge status-monitoring"><i class="fas fa-eye"></i> WAF Enabled (' + mode.charAt(0).toUpperCase() + mode.slice(1) + ')</span>';
+                }
+            } else {
+                statusDisplay.innerHTML = '<span class="status-badge status-disabled"><i class="fas fa-exclamation-triangle"></i> WAF Disabled</span>';
+            }
+        }
+
+        async function saveConfiguration() {
+            const config = {
+                waf_enabled: document.getElementById('masterToggle').checked,
+                pattern_detection_enabled: document.getElementById('patternDetectionToggle').checked,
+                anomaly_detection_enabled: document.getElementById('anomalyDetectionToggle').checked,
+                detection_mode: document.getElementById('detectionMode').value,
+                rate_limiting_enabled: document.getElementById('rateLimitingToggle').checked,
+                rate_limit_per_ip: parseInt(document.getElementById('rateLimitPerIp').value),
+                rate_limit_global: parseInt(document.getElementById('rateLimitGlobal').value),
+                rate_limit_burst: parseInt(document.getElementById('rateLimitBurst').value)
+            };
+
+            try {
+                const response = await fetch('/api/waf/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('success', 'Configuration saved successfully!');
+                    currentConfig = data.config;
+                    wafCurrentlyEnabled = config.waf_enabled;
+                    updateStatusDisplay();
+                } else {
+                    showAlert('danger', data.error || 'Failed to save configuration');
+                }
+            } catch (error) {
+                showAlert('danger', 'Error saving configuration: ' + error.message);
+            }
+        }
+
+        async function resetRateLimits() {
+            if (!confirm('Are you sure you want to reset all rate limit tracking data? This will clear all IP tracking.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/waf/rate-limit/reset', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('success', data.message);
+                    loadStatistics();
+                } else {
+                    showAlert('danger', data.error || 'Failed to reset rate limits');
+                }
+            } catch (error) {
+                showAlert('danger', 'Error resetting rate limits: ' + error.message);
+            }
+        }
+
+        function showAlert(type, message) {
+            const alertDiv = document.getElementById('statusAlert');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            alertDiv.style.display = 'block';
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                alertDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // Update status display when detection mode changes
+        document.getElementById('detectionMode').addEventListener('change', updateStatusDisplay);
+    </script>
+</body>
+</html>

@@ -3,7 +3,7 @@ import re
 import time
 import os
 from rules import RULES
-from database import log_attack, get_client_ip
+from database import log_attack, get_client_ip, log_rate_limit_violation
 
 # Import the enhanced detector (now with ML and statistical analysis)
 from ultra_anomaly_detection import EnhancedUltraAnomalyDetector as AnomalyDetector
@@ -16,6 +16,18 @@ try:
 except ImportError as e:
     ALERTS_ENABLED = False
     print(f"[WAF] Alert system disabled: {e}")
+
+# Import WAF configuration and rate limiter
+try:
+    from waf_config import waf_config
+    from rate_limiter import rate_limiter
+    WAF_CONFIG_ENABLED = True
+    print("[WAF] Configuration and rate limiting enabled")
+except ImportError as e:
+    WAF_CONFIG_ENABLED = False
+    waf_config = None
+    rate_limiter = None
+    print(f"[WAF] Configuration/rate limiting disabled: {e}")
 
 SAFE_PATHS = [
     '/login',
@@ -140,6 +152,49 @@ print(f"  - Layers: Pattern + Anomaly (ML+Stats+Rules) + Behavioral")
 def waf_middleware(app):
     @app.before_request
     def inspect_request():
+        ip = get_client_ip(request)
+
+        # ===========================
+        # CHECK 0: WAF STATUS & RATE LIMITING
+        # ===========================
+
+        # Check if WAF is globally enabled
+        if WAF_CONFIG_ENABLED and not waf_config.is_waf_enabled():
+            # WAF is disabled - bypass all checks
+            return
+
+        # Check rate limiting (before any other checks for performance)
+        if WAF_CONFIG_ENABLED and rate_limiter:
+            allowed, retry_after, info = rate_limiter.check_rate_limit(ip, request.path)
+
+            if not allowed:
+                # Rate limit exceeded - log and block
+                reason = info.get('reason', 'unknown')
+                limit_value = info.get('limit', 0)
+                current_value = info.get('current', 0)
+
+                # Log to database
+                try:
+                    log_rate_limit_violation(ip, request.path, reason, limit_value, current_value, retry_after)
+                except Exception as e:
+                    print(f"[WAF] Error logging rate limit violation: {e}")
+
+                print(f"[WAF BLOCKED - Rate Limit] {ip} on {request.path}")
+                print(f"  Reason: {reason}, Limit: {limit_value}, Current: {current_value}")
+
+                # Return 429 Too Many Requests
+                message = waf_config.get('rate_limit_response_message', '⚠️ Rate limit exceeded. Please slow down.')
+                from flask import Response
+                response = Response(message, status=429)
+                response.headers['Retry-After'] = str(retry_after)
+                response.headers['X-RateLimit-Limit'] = str(limit_value)
+                response.headers['X-RateLimit-Remaining'] = '0'
+                response.headers['X-RateLimit-Reset'] = str(int(time.time()) + retry_after)
+                return response
+
+            # Record request for rate limiting
+            rate_limiter.record_request(ip, request.path)
+
         # Skip monitoring for safe paths (GET only, no query params)
         if request.path in SAFE_PATHS and request.method == 'GET' and not request.args:
             return
@@ -159,7 +214,7 @@ def waf_middleware(app):
             if 'user_id' in session:
                 # Authenticated admin operation - bypass all WAF checks
                 return
-            
+
         try:
             get_data = request.args.to_dict(flat=True)
             post_data = request.form.to_dict(flat=True)
@@ -169,58 +224,75 @@ def waf_middleware(app):
         data = str(get_data) + str(post_data)
         data += str(request.headers.get('User-Agent', '')) + str(request.path)
 
+        # Check detection mode
+        detection_mode = 'blocking'  # default
+        if WAF_CONFIG_ENABLED:
+            detection_mode = waf_config.get_detection_mode()
+
         # ===========================
         # LAYER 1: PATTERN MATCHING
         # ===========================
-        for attack_type, patterns in RULES.items():
-            for i, pattern in enumerate(patterns):
-                try:
-                    # Compile the pattern first to catch errors early
-                    compiled_pattern = re.compile(pattern, re.IGNORECASE)
-                    if compiled_pattern.search(data):
-                        ip = get_client_ip(request)
-                        user_agent = request.headers.get('User-Agent', 'Unknown')
-                        log_attack(ip, attack_type, data[:500], request.path, user_agent)
-                        print(f"[WAF BLOCKED - Layer 1] {attack_type} from {ip}")
-                        print(f"  Pattern matched: {pattern[:50]}...")
+        # Skip if pattern detection disabled
+        if WAF_CONFIG_ENABLED and not waf_config.is_pattern_detection_enabled():
+            # Skip to layer 2
+            pass
+        else:
+            for attack_type, patterns in RULES.items():
+                for i, pattern in enumerate(patterns):
+                    try:
+                        # Compile the pattern first to catch errors early
+                        compiled_pattern = re.compile(pattern, re.IGNORECASE)
+                        if compiled_pattern.search(data):
+                            ip = get_client_ip(request)
+                            user_agent = request.headers.get('User-Agent', 'Unknown')
+                            log_attack(ip, attack_type, data[:500], request.path, user_agent)
+                            print(f"[WAF BLOCKED - Layer 1] {attack_type} from {ip}")
+                            print(f"  Pattern matched: {pattern[:50]}...")
 
-                        # Process attack for alerting (flood detection, critical attack alerts)
-                        if ALERTS_ENABLED:
-                            try:
-                                alert_manager.process_attack(ip, attack_type, data[:500], request.path, user_agent)
-                            except Exception as e:
-                                print(f"[WAF] Alert processing error: {e}")
+                            # Process attack for alerting (flood detection, critical attack alerts)
+                            if ALERTS_ENABLED:
+                                try:
+                                    alert_manager.process_attack(ip, attack_type, data[:500], request.path, user_agent)
+                                except Exception as e:
+                                    print(f"[WAF] Alert processing error: {e}")
 
-                        return "⚠️ Request blocked: suspicious activity detected.", 403
-                except re.error as e:
-                    # Malformed regex pattern - log it but continue checking other patterns
-                    print(f"[WAF ERROR] Invalid regex pattern in {attack_type}[{i}]: {e}")
-                    print(f"  Pattern: {pattern[:100]}")
-                    # Don't crash - continue to next pattern
-                    continue
-                except Exception as e:
-                    # Other errors - log and continue
-                    print(f"[WAF ERROR] Error checking pattern {attack_type}[{i}]: {e}")
-                    continue
+                            # Check detection mode - only block if in blocking mode
+                            if detection_mode == 'blocking':
+                                return "⚠️ Request blocked: suspicious activity detected.", 403
+                            # In monitoring/learning mode, just log but don't block
+                    except re.error as e:
+                        # Malformed regex pattern - log it but continue checking other patterns
+                        print(f"[WAF ERROR] Invalid regex pattern in {attack_type}[{i}]: {e}")
+                        print(f"  Pattern: {pattern[:100]}")
+                        # Don't crash - continue to next pattern
+                        continue
+                    except Exception as e:
+                        # Other errors - log and continue
+                        print(f"[WAF ERROR] Error checking pattern {attack_type}[{i}]: {e}")
+                        continue
         
         # ===========================
         # LAYER 2: ENHANCED ANOMALY DETECTION
         # ===========================
-        if anomaly_detector.trained:
+        # Skip if anomaly detection disabled
+        if WAF_CONFIG_ENABLED and not waf_config.is_anomaly_detection_enabled():
+            # Skip anomaly detection
+            pass
+        elif anomaly_detector.trained:
             request_data = {
                 'ip': get_client_ip(request),
                 'path': request.path,
                 'payload': data,
                 'timestamp': time.time()
             }
-            
+
             # Use adaptive threshold (None = auto-select based on endpoint)
             # The enhanced detector will choose the right threshold for this path
             is_anomalous, score, details = anomaly_detector.is_anomalous(
-                request_data, 
+                request_data,
                 threshold=None  # Use adaptive threshold
             )
-            
+
             if is_anomalous:
                 ip = get_client_ip(request)
                 user_agent = request.headers.get('User-Agent', 'Unknown')
@@ -246,6 +318,9 @@ def waf_middleware(app):
                     except Exception as e:
                         print(f"[WAF] Alert processing error: {e}")
 
-                return "⚠️ Request blocked: suspicious activity detected.", 403
+                # Check detection mode - only block if in blocking mode
+                if detection_mode == 'blocking':
+                    return "⚠️ Request blocked: suspicious activity detected.", 403
+                # In monitoring/learning mode, just log but don't block
         
         # Otherwise allow request to proceed

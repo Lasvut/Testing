@@ -1,4 +1,4 @@
- 
+
 __pycache__/
 *.py[cod]
 *.pyc
@@ -10,3 +10,7 @@ backups/
 .DS_Store
 Thumbs.db
 *.log
+
+# Runtime configuration files
+waf_config.json
+alert_config.json
