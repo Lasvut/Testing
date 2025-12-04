@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response
 from werkzeug.security import check_password_hash
 from middleware import waf_middleware
-from database import get_user_by_username, init_db, get_attack_stats, get_recent_logs, get_connection, create_user, get_all_users
+from database import get_user_by_username, init_db, get_attack_stats, get_recent_logs, get_connection, create_user, get_all_users, get_alert_history, get_alert_statistics
 from ultra_anomaly_detection import EnhancedUltraAnomalyDetector as AnomalyDetector
 from improved_svm_detector import ImprovedSVMAnomalyDetector  # Production ML model
 from attack_generator import AttackGenerator
@@ -10,6 +10,18 @@ import shutil
 import csv
 from datetime import datetime
 import time
+
+# Import alert system
+try:
+    from alert_manager import alert_manager
+    from alerts_config import alert_config
+    ALERTS_AVAILABLE = True
+    print("[App] Alert system loaded successfully")
+except ImportError as e:
+    ALERTS_AVAILABLE = False
+    alert_manager = None
+    alert_config = None
+    print(f"[App] Alert system not available: {e}")
 
 app = Flask(__name__)
 app.secret_key = "replace-with-a-secure-random-secret"
@@ -838,6 +850,133 @@ def get_malicious_samples():
         {'ip': '10.0.0.49', 'path': '/open', 'payload': 'doc=/var/www/../../etc/passwd', 'timestamp': time.time()},
         {'ip': '10.0.0.29', 'path': '/fetch', 'payload': 'resource=file:///etc/passwd', 'timestamp': time.time()},
     ]
+
+# ==========================================
+# ALERT SYSTEM API
+# ==========================================
+
+@app.route('/alerts')
+def alerts_page():
+    """Alert configuration page"""
+    if "user_id" not in session:
+        flash("Please log in to continue", "warning")
+        return redirect(url_for('login'))
+
+    if not ALERTS_AVAILABLE:
+        flash("Alert system not available", "danger")
+        return redirect(url_for('dashboard'))
+
+    return render_template('alerts.html', username=session.get('username'))
+
+@app.route('/api/alerts/config', methods=['GET'])
+def api_get_alert_config():
+    """Get current alert configuration"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not ALERTS_AVAILABLE:
+        return jsonify({"error": "Alert system not available"}), 503
+
+    try:
+        config = alert_config.to_dict()
+        return jsonify({"success": True, "config": config})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/alerts/config', methods=['POST'])
+def api_update_alert_config():
+    """Update alert configuration"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not ALERTS_AVAILABLE:
+        return jsonify({"error": "Alert system not available"}), 503
+
+    try:
+        data = request.get_json()
+
+        # Update configuration
+        success = alert_config.update(data)
+
+        if success:
+            # Log configuration change
+            username = session.get('username', 'unknown')
+            alert_manager.send_config_change_alert(
+                user=username,
+                action="Alert Configuration Updated",
+                details=f"Alert settings were modified via web interface"
+            )
+
+            return jsonify({
+                "success": True,
+                "message": "Alert configuration updated successfully"
+            })
+        else:
+            return jsonify({"success": False, "error": "Failed to save configuration"}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/alerts/test', methods=['POST'])
+def api_test_alerts():
+    """Test alert configuration"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not ALERTS_AVAILABLE:
+        return jsonify({"error": "Alert system not available"}), 503
+
+    try:
+        results = alert_manager.test_alerts()
+        return jsonify({"success": True, "results": results})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/alerts/history')
+def api_alert_history():
+    """Get alert history"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        alert_type = request.args.get('type', None)
+
+        history = get_alert_history(limit=limit, offset=offset, alert_type=alert_type)
+        return jsonify({
+            "success": True,
+            "alerts": [dict(alert) for alert in history]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/alerts/statistics')
+def api_alert_statistics():
+    """Get alert statistics"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        stats = get_alert_statistics()
+        return jsonify({"success": True, "statistics": stats})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/alerts/flood-stats')
+def api_flood_statistics():
+    """Get flood detector statistics"""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if not ALERTS_AVAILABLE:
+        return jsonify({"error": "Alert system not available"}), 503
+
+    try:
+        stats = alert_manager.get_statistics()
+        return jsonify({"success": True, "statistics": stats})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/logout')
 def logout():
