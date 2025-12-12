@@ -192,7 +192,7 @@ def waf_middleware(app):
                 return
 
         # ===========================
-        # CHECK 1: WAF STATUS & RATE LIMITING
+        # CHECK 1: WAF STATUS
         # ===========================
 
         # Check if WAF is globally enabled
@@ -200,40 +200,8 @@ def waf_middleware(app):
             # WAF is disabled - bypass all checks
             return
 
-        # Check rate limiting (after whitelisting)
-        if WAF_CONFIG_ENABLED and rate_limiter:
-            allowed, retry_after, info = rate_limiter.check_rate_limit(ip, request.path)
-
-            if not allowed:
-                # Rate limit exceeded - log and block
-                reason = info.get('reason', 'unknown')
-                limit_value = info.get('limit', 0)
-                current_value = info.get('current', 0)
-
-                # Log to database
-                try:
-                    log_rate_limit_violation(ip, request.path, reason, limit_value, current_value, retry_after)
-                except Exception as e:
-                    print(f"[WAF] Error logging rate limit violation: {e}")
-
-                print(f"[WAF BLOCKED - Rate Limit] {ip} on {request.path}")
-                print(f"  Reason: {reason}, Limit: {limit_value}, Current: {current_value}")
-
-                # Return 429 Too Many Requests
-                message = waf_config.get('rate_limit_response_message', '⚠️ Rate limit exceeded. Please slow down.')
-                from flask import Response
-                response = Response(message, status=429)
-                response.headers['Retry-After'] = str(retry_after)
-                response.headers['X-RateLimit-Limit'] = str(limit_value)
-                response.headers['X-RateLimit-Remaining'] = '0'
-                response.headers['X-RateLimit-Reset'] = str(int(time.time()) + retry_after)
-                return response
-
-            # Record request for rate limiting
-            rate_limiter.record_request(ip, request.path)
-
         # ===========================
-        # CHECK 2: PATTERN MATCHING & ANOMALY DETECTION
+        # CHECK 2: PATTERN MATCHING & ANOMALY DETECTION (Before rate limiting!)
         # ===========================
 
         try:
@@ -291,7 +259,7 @@ def waf_middleware(app):
                         # Other errors - log and continue
                         print(f"[WAF ERROR] Error checking pattern {attack_type}[{i}]: {e}")
                         continue
-        
+
         # ===========================
         # LAYER 2: ENHANCED ANOMALY DETECTION
         # ===========================
@@ -343,5 +311,41 @@ def waf_middleware(app):
                 if detection_mode == 'blocking':
                     return "⚠️ Request blocked: suspicious activity detected.", 403
                 # In monitoring/learning mode, just log but don't block
-        
+
+        # ===========================
+        # CHECK 3: RATE LIMITING (After WAF - only for clean requests)
+        # ===========================
+
+        # Check rate limiting (after WAF inspection)
+        if WAF_CONFIG_ENABLED and rate_limiter:
+            allowed, retry_after, info = rate_limiter.check_rate_limit(ip, request.path)
+
+            if not allowed:
+                # Rate limit exceeded - log and block
+                reason = info.get('reason', 'unknown')
+                limit_value = info.get('limit', 0)
+                current_value = info.get('current', 0)
+
+                # Log to database
+                try:
+                    log_rate_limit_violation(ip, request.path, reason, limit_value, current_value, retry_after)
+                except Exception as e:
+                    print(f"[WAF] Error logging rate limit violation: {e}")
+
+                print(f"[WAF BLOCKED - Rate Limit] {ip} on {request.path}")
+                print(f"  Reason: {reason}, Limit: {limit_value}, Current: {current_value}")
+
+                # Return 429 Too Many Requests
+                message = waf_config.get('rate_limit_response_message', '⚠️ Rate limit exceeded. Please slow down.')
+                from flask import Response
+                response = Response(message, status=429)
+                response.headers['Retry-After'] = str(retry_after)
+                response.headers['X-RateLimit-Limit'] = str(limit_value)
+                response.headers['X-RateLimit-Remaining'] = '0'
+                response.headers['X-RateLimit-Reset'] = str(int(time.time()) + retry_after)
+                return response
+
+            # Record request for rate limiting
+            rate_limiter.record_request(ip, request.path)
+
         # Otherwise allow request to proceed
