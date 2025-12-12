@@ -124,8 +124,8 @@ def monitor():
         return redirect(url_for('login'))
     
     stats = get_attack_stats()
-    recent_logs = get_recent_logs(limit=50)
-    
+    recent_logs = get_recent_logs(limit=200)
+
     return render_template('monitor.html', 
                          username=session.get('username'),
                          stats=stats,
