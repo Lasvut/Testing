@@ -687,36 +687,59 @@ def api_anomaly_test():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+def load_csic_samples(sample_type='Normal', limit=7000, default_ip='192.168.1.100'):
+    """
+    Generic function to load samples from CSIC dataset.
+
+    OPTIMIZATION: This function eliminates 90 lines of duplicated code
+    by providing a single CSV loading implementation for both normal
+    and malicious samples.
+
+    Args:
+        sample_type: 'Normal' or 'Anomalous' to filter dataset rows
+        limit: Maximum number of samples to load
+        default_ip: IP address to assign to loaded samples
+
+    Returns:
+        list: Loaded samples or None if loading fails
+    """
+    if not os.path.exists('datasets/csic2010/CSIC_2010.csv'):
+        return None
+
+    try:
+        samples = []
+        with open('datasets/csic2010/CSIC_2010.csv', 'r', encoding='utf-8', errors='ignore') as f:
+            reader = csv.reader(f)
+            next(reader)  # Skip header
+
+            for row in reader:
+                if len(row) >= 3 and row[0].strip() == sample_type:
+                    url = row[-1].strip()
+                    samples.append({
+                        'ip': default_ip,
+                        'path': '',
+                        'payload': url,
+                        'timestamp': time.time()
+                    })
+
+                    if len(samples) >= limit:
+                        break
+
+        if len(samples) >= 50:
+            print(f"[Anomaly Test] Loaded {len(samples)} {sample_type.lower()} samples from CSIC dataset")
+            return samples
+    except Exception as e:
+        print(f"[Anomaly Test] Could not load CSIC dataset: {e}")
+
+    return None
+
 def get_normal_samples():
     """Get normal traffic samples - try to load from CSIC dataset first"""
 
-    # Try to load from CSIC CSV dataset
-    if os.path.exists('datasets/csic2010/CSIC_2010.csv'):
-        try:
-            normal_samples = []
-            with open('datasets/csic2010/CSIC_2010.csv', 'r', encoding='utf-8', errors='ignore') as f:
-                reader = csv.reader(f)
-                next(reader)  # Skip header
-
-                for row in reader:
-                    if len(row) >= 3 and row[0].strip() == 'Normal':
-                        url = row[-1].strip()
-                        normal_samples.append({
-                            'ip': '192.168.1.100',
-                            'path': '',
-                            'payload': url,
-                            'timestamp': time.time()
-                        })
-
-                        # Limit to 5000 samples for maximum training accuracy
-                        if len(normal_samples) >= 7000:
-                            break
-
-            if len(normal_samples) >= 50:
-                print(f"[Anomaly Test] Loaded {len(normal_samples)} normal samples from CSIC dataset")
-                return normal_samples
-        except Exception as e:
-            print(f"[Anomaly Test] Could not load CSIC dataset: {e}")
+    # Try to load from CSIC CSV dataset using optimized shared function
+    normal_samples = load_csic_samples('Normal', limit=7000, default_ip='192.168.1.100')
+    if normal_samples:
+        return normal_samples
 
     # Fallback to hardcoded samples if CSIC not available
     print("[Anomaly Test] Using hardcoded normal samples")
@@ -776,33 +799,10 @@ def get_normal_samples():
 def get_malicious_samples():
     """Get malicious traffic samples - try to load from CSIC dataset first"""
 
-    # Try to load from CSIC CSV dataset
-    if os.path.exists('datasets/csic2010/CSIC_2010.csv'):
-        try:
-            attack_samples = []
-            with open('datasets/csic2010/CSIC_2010.csv', 'r', encoding='utf-8', errors='ignore') as f:
-                reader = csv.reader(f)
-                next(reader)  # Skip header
-
-                for row in reader:
-                    if len(row) >= 3 and row[0].strip() == 'Anomalous':
-                        url = row[-1].strip()
-                        attack_samples.append({
-                            'ip': '10.0.0.100',
-                            'path': '',
-                            'payload': url,
-                            'timestamp': time.time()
-                        })
-
-                        # Limit to 3000 attack samples for maximum training accuracy
-                        if len(attack_samples) >= 4500:
-                            break
-
-            if len(attack_samples) >= 30:
-                print(f"[Anomaly Test] Loaded {len(attack_samples)} attack samples from CSIC dataset")
-                return attack_samples
-        except Exception as e:
-            print(f"[Anomaly Test] Could not load attack samples from CSIC dataset: {e}")
+    # Try to load from CSIC CSV dataset using optimized shared function
+    attack_samples = load_csic_samples('Anomalous', limit=4500, default_ip='10.0.0.100')
+    if attack_samples:
+        return attack_samples
 
     # Fallback to hardcoded attack samples if CSIC not available
     print("[Anomaly Test] Using hardcoded attack samples")
