@@ -40,12 +40,16 @@ from ultra_anomaly_detection import EnhancedUltraAnomalyDetector as AnomalyDetec
 try:
     from alert_manager import alert_manager
     from alerts_config import alert_config
+    from email_sender import email_sender
+    from discord_sender import discord_sender
     ALERTS_AVAILABLE = True
     print("[App] Alert system loaded successfully")
 except ImportError as e:
     ALERTS_AVAILABLE = False
     alert_manager = None
     alert_config = None
+    email_sender = None
+    discord_sender = None
     print(f"[App] Alert system not available: {e}")
 
 # Import WAF configuration and rate limiter
