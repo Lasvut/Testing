@@ -23,6 +23,10 @@ from collections import Counter, defaultdict
 from urllib.parse import urlparse, parse_qs, unquote
 import pickle
 import os
+import warnings
+
+# Suppress XGBoost model serialization warnings for backward compatibility
+warnings.filterwarnings('ignore', message='.*If you are loading a serialized model.*', category=UserWarning)
 
 # Optional ML imports - graceful fallback if not available
 try:
