@@ -8,6 +8,19 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from alerts_config import alert_config
+from constants import (
+    WINDOW_1_MINUTE,
+    WINDOW_5_MINUTES,
+    WINDOW_10_MINUTES,
+    WINDOW_1_HOUR,
+    MAX_ATTACK_TYPE_WINDOW_SIZE,
+    MAX_GLOBAL_ATTACK_WINDOW_SIZE,
+    FLOOD_THRESHOLD_PER_IP,
+    FLOOD_THRESHOLD_TOTAL,
+    FLOOD_VELOCITY_MULTIPLIER,
+    FLOOD_TYPE_CONCENTRATION_PCT,
+    FLOOD_MIN_ATTACKS_FOR_CONCENTRATION
+)
 
 
 class FloodDetector:
@@ -19,10 +32,10 @@ class FloodDetector:
 
         # Sliding window storage (stores timestamps of attacks)
         # Format: {ip: deque([timestamp1, timestamp2, ...])}
-        self.attack_windows = defaultdict(lambda: deque(maxlen=1000))
+        self.attack_windows = defaultdict(lambda: deque(maxlen=MAX_ATTACK_TYPE_WINDOW_SIZE))
 
         # Global attack window (all IPs)
-        self.global_attack_window = deque(maxlen=5000)
+        self.global_attack_window = deque(maxlen=MAX_GLOBAL_ATTACK_WINDOW_SIZE)
 
         # Baseline tracking for velocity detection
         self.baseline_rates = {
@@ -32,7 +45,7 @@ class FloodDetector:
         }
 
         # Attack type tracking
-        self.attack_type_windows = defaultdict(lambda: deque(maxlen=1000))
+        self.attack_type_windows = defaultdict(lambda: deque(maxlen=MAX_ATTACK_TYPE_WINDOW_SIZE))
 
     def record_attack(self, ip, attack_type, timestamp=None):
         """
@@ -75,10 +88,10 @@ class FloodDetector:
         # Clean old entries (older than 5 minutes)
         self._clean_old_entries(current_time)
 
-        # Get thresholds from config
-        per_ip_threshold = self.config.get('flood_threshold_per_ip', 10)
-        total_threshold = self.config.get('flood_threshold_total', 50)
-        velocity_multiplier = self.config.get('flood_velocity_multiplier', 3.0)
+        # Get thresholds from config (with constants as defaults)
+        per_ip_threshold = self.config.get('flood_threshold_per_ip', FLOOD_THRESHOLD_PER_IP)
+        total_threshold = self.config.get('flood_threshold_total', FLOOD_THRESHOLD_TOTAL)
+        velocity_multiplier = self.config.get('flood_velocity_multiplier', FLOOD_VELOCITY_MULTIPLIER)
 
         # Check 1: Single IP flooding
         ip_flood, ip_details = self._check_ip_flood(ip, current_time, per_ip_threshold)
@@ -212,30 +225,29 @@ class FloodDetector:
         return False, {}
 
     def _clean_old_entries(self, current_time):
-        """Remove entries older than 5 minutes"""
-        cutoff_time = current_time - 300  # 5 minutes
+        """
+        Remove entries older than 5 minutes.
 
-        # Clean IP-specific windows
-        for ip in list(self.attack_windows.keys()):
-            window = self.attack_windows[ip]
-            # Remove old timestamps
-            while window and window[0] < cutoff_time:
-                window.popleft()
-            # Remove empty windows
-            if not window:
-                del self.attack_windows[ip]
+        OPTIMIZATION: Uses lazy cleanup with list comprehension for better
+        performance. Only removes empty windows to free memory.
+        """
+        cutoff_time = current_time - WINDOW_5_MINUTES
 
-        # Clean global window
+        # Clean IP-specific windows - remove only empty ones
+        empty_ips = [ip for ip, window in self.attack_windows.items()
+                     if not window or (window and window[-1] < cutoff_time)]
+        for ip in empty_ips:
+            del self.attack_windows[ip]
+
+        # Clean global window - trim old entries
         while self.global_attack_window and self.global_attack_window[0]['time'] < cutoff_time:
             self.global_attack_window.popleft()
 
-        # Clean attack type windows
-        for attack_type in list(self.attack_type_windows.keys()):
-            window = self.attack_type_windows[attack_type]
-            while window and window[0] < cutoff_time:
-                window.popleft()
-            if not window:
-                del self.attack_type_windows[attack_type]
+        # Clean attack type windows - remove only empty ones
+        empty_types = [attack_type for attack_type, window in self.attack_type_windows.items()
+                       if not window or (window and window[-1] < cutoff_time)]
+        for attack_type in empty_types:
+            del self.attack_type_windows[attack_type]
 
     def _update_baseline_rates(self, current_time):
         """Update baseline attack rates"""

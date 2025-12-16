@@ -1,14 +1,49 @@
-import sqlite3
+# Standard library imports
 import datetime
-from werkzeug.security import generate_password_hash
+import sqlite3
+from contextlib import contextmanager
+
+# Third-party imports
 from flask import request
+from werkzeug.security import generate_password_hash
 
 DB = "app_data.db"
 
 def get_connection():
+    """
+    Get a database connection.
+
+    Note: For better performance, consider using db_connection() context manager
+    which handles commit/close automatically.
+    """
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     return conn
+
+@contextmanager
+def db_connection():
+    """
+    Context manager for database connections.
+
+    OPTIMIZATION: Provides automatic connection management with proper
+    commit/rollback and guaranteed cleanup.
+
+    Usage:
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM logs")
+            # Auto-commits on success, auto-closes on exit
+    """
+    conn = sqlite3.connect(DB)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def init_db():
     conn = get_connection()

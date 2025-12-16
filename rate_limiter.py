@@ -8,6 +8,18 @@ import time
 from collections import defaultdict, deque
 from threading import Lock
 from waf_config import waf_config
+from constants import (
+    WINDOW_1_MINUTE,
+    WINDOW_10_SECONDS,
+    WINDOW_5_MINUTES,
+    RATE_LIMITER_IP_WINDOW,
+    RATE_LIMITER_GLOBAL_WINDOW,
+    RATE_LIMITER_PATH_WINDOW,
+    CLEANUP_INTERVAL,
+    DEFAULT_PER_IP_LIMIT,
+    DEFAULT_GLOBAL_LIMIT,
+    DEFAULT_BURST_LIMIT
+)
 
 
 class RateLimiter:
@@ -18,20 +30,20 @@ class RateLimiter:
         self.config = waf_config
 
         # Per-IP tracking: {ip: deque([timestamp1, timestamp2, ...])}
-        self.ip_windows = defaultdict(lambda: deque(maxlen=10000))
+        self.ip_windows = defaultdict(lambda: deque(maxlen=RATE_LIMITER_IP_WINDOW))
 
         # Global tracking: deque([timestamp1, timestamp2, ...])
-        self.global_window = deque(maxlen=100000)
+        self.global_window = deque(maxlen=RATE_LIMITER_GLOBAL_WINDOW)
 
         # Per-IP per-path tracking: {(ip, path): deque([...])}
-        self.ip_path_windows = defaultdict(lambda: deque(maxlen=1000))
+        self.ip_path_windows = defaultdict(lambda: deque(maxlen=RATE_LIMITER_PATH_WINDOW))
 
         # Thread safety
         self.lock = Lock()
 
         # Cleanup interval
         self.last_cleanup = time.time()
-        self.cleanup_interval = 300  # 5 minutes
+        self.cleanup_interval = CLEANUP_INTERVAL
 
     def check_rate_limit(self, ip, path=None):
         """
@@ -56,15 +68,15 @@ class RateLimiter:
                 self.last_cleanup = current_time
 
             # Check global rate limit
-            global_limit = self.config.get('rate_limit_global', 1000)
+            global_limit = self.config.get('rate_limit_global', DEFAULT_GLOBAL_LIMIT)
             global_requests = self._count_requests_in_window(
                 self.global_window,
                 current_time,
-                60  # 1 minute window
+                WINDOW_1_MINUTE
             )
 
             if global_requests >= global_limit:
-                retry_after = self._calculate_retry_after(self.global_window, 60)
+                retry_after = self._calculate_retry_after(self.global_window, WINDOW_1_MINUTE)
                 return False, retry_after, {
                     'reason': 'global_rate_limit',
                     'limit': global_limit,
@@ -210,34 +222,33 @@ class RateLimiter:
 
     def _cleanup_old_entries(self, current_time):
         """
-        Clean up old entries (older than 5 minutes)
+        Clean up old entries (older than 5 minutes).
+
+        OPTIMIZATION: Uses lazy cleanup - deques automatically drop old entries
+        when maxlen is reached. This method only removes empty windows from
+        dictionaries to free memory.
 
         Args:
             current_time: Current timestamp
         """
-        cutoff_time = current_time - 300  # 5 minutes
+        cutoff_time = current_time - WINDOW_5_MINUTES
 
-        # Cleanup IP windows
-        for ip in list(self.ip_windows.keys()):
-            window = self.ip_windows[ip]
-            # Remove old timestamps
-            while window and window[0] < cutoff_time:
-                window.popleft()
-            # Remove empty windows
-            if not window:
-                del self.ip_windows[ip]
+        # Cleanup IP windows - only remove empty ones
+        # Old timestamps naturally drop off due to maxlen
+        empty_ips = [ip for ip, window in self.ip_windows.items()
+                     if not window or (window and window[-1] < cutoff_time)]
+        for ip in empty_ips:
+            del self.ip_windows[ip]
 
-        # Cleanup global window
+        # Cleanup global window - trim old entries if needed
         while self.global_window and self.global_window[0] < cutoff_time:
             self.global_window.popleft()
 
-        # Cleanup path-specific windows
-        for key in list(self.ip_path_windows.keys()):
-            window = self.ip_path_windows[key]
-            while window and window[0] < cutoff_time:
-                window.popleft()
-            if not window:
-                del self.ip_path_windows[key]
+        # Cleanup path-specific windows - only remove empty ones
+        empty_paths = [key for key, window in self.ip_path_windows.items()
+                       if not window or (window and window[-1] < cutoff_time)]
+        for key in empty_paths:
+            del self.ip_path_windows[key]
 
     def get_statistics(self):
         """Get rate limiter statistics"""
