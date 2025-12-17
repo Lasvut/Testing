@@ -367,7 +367,7 @@ RULES = {
         r"(?i)\\-\\-proxy=\"http://\\[username\\]:\\[password\\]@\\[proxy_ip\\]:\\[proxy_port\\]\"",
         r"(?i)select\\ xmlagg\\(xmlrow\\(table_schema\\)\\)\\ from\\ \\(select\\ distinct\\(table_schema\\)\\ from\\ sysibm\\.tables\\)",
         r"(?i)'\\ and\\ 1=cast\\(\\(SELECT\\ table_name\\ FROM\\ information_schema\\.tables\\ LIMIT\\ 1\\ OFFSET\\ data_offset\\)\\ as\\ int\\)\\ and\\ '1'='1",
-        r"(?i)\\-\\-\\ May\\ need\\ CAST\\(xml2clob\\(…\\ AS\\ varchar\\(500\\)\\)\\ to\\ display\\ the\\ result\\.",
+        r"(?i)\\-\\-\\ May\\ need\\ CAST\\(xml2clob\\(…\\)\\ AS\\ varchar\\(500\\)\\)\\ to\\ display\\ the\\ result\\.",
         r"(?i)page\\.asp\\?id=1'\\ or\\ 1=1\\ \\-\\-\\ true",
         r"(?i)AND\\ 1337=\\(CASE\\ WHEN\\ \\(1=1\\)\\ THEN\\ DBMS_PIPE\\.RECEIVE_MESSAGE\\('RANDSTR',10\\)\\ ELSE\\ 1337\\ END\\)",
         r"(?i)sqlmap\\ \\-r\\ 1\\.txt\\ \\-dbms\\ MySQL\\ \\-second\\-order\\ \"http://<IP/domain>/joomla/administrator/index\\.php\"\\ \\-D\\ \"joomla\"\\ \\-dbs",
