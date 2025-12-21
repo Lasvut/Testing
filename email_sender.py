@@ -9,6 +9,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from alerts_config import alert_config
+from constants import (
+    ALERT_SEVERITY_EMOJI,
+    ALERT_TYPE_NAMES,
+    ALERT_SEVERITY_COLORS_HTML
+)
 
 
 class EmailSender:
@@ -86,19 +91,8 @@ class EmailSender:
 
     def _build_subject(self, alert_type, severity):
         """Build email subject line"""
-        emoji = {
-            'CRITICAL': '🚨',
-            'WARNING': '⚠️',
-            'INFO': 'ℹ️'
-        }.get(severity, '📧')
-
-        type_name = {
-            'flood': 'Attack Flood',
-            'critical_attack': 'Critical Attack',
-            'config_change': 'Configuration Change',
-            'system_health': 'System Health Alert'
-        }.get(alert_type, 'WAF Alert')
-
+        emoji = ALERT_SEVERITY_EMOJI.get(severity, '📧')
+        type_name = ALERT_TYPE_NAMES.get(alert_type, 'WAF Alert')
         return f"{emoji} WAF Alert - {type_name} [{severity}]"
 
     def _build_body(self, alert_type, severity, message, details):
@@ -200,11 +194,7 @@ class EmailSender:
     def _build_html_body(self, alert_type, severity, message, details):
         """Build HTML email body"""
         # Severity color mapping
-        color = {
-            'CRITICAL': '#dc3545',
-            'WARNING': '#ffc107',
-            'INFO': '#17a2b8'
-        }.get(severity, '#6c757d')
+        color = ALERT_SEVERITY_COLORS_HTML.get(severity, '#6c757d')
 
         html = f"""
         <!DOCTYPE html>

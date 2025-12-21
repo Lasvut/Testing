@@ -5,6 +5,7 @@ import shutil
 import time
 from datetime import datetime
 from functools import wraps
+from io import StringIO, BytesIO
 
 # Third-party imports (alphabetical)
 from flask import (
@@ -313,8 +314,6 @@ def api_export_csv():
     OPTIMIZATION: Uses StringIO and csv.writer for proper CSV formatting
     and 50% better performance on large datasets.
     """
-    from io import StringIO
-
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, time, ip, type, payload, path, user_agent FROM logs ORDER BY id")
@@ -349,8 +348,6 @@ def api_export_csv():
 def api_generate_pdf():
     """Generate PDF report of attack logs"""
     try:
-        from io import BytesIO
-
         # Get stats
         stats = get_attack_stats()
         recent_logs = get_recent_logs(limit=100)
