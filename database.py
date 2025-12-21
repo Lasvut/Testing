@@ -46,65 +46,61 @@ def db_connection():
         conn.close()
 
 def init_db():
-    conn = get_connection()
-    c = conn.cursor()
-    # users table
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        created_at TEXT NOT NULL
-    )
-    ''')
-    # logs table for blocked requests
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        time TEXT,
-        ip TEXT,
-        type TEXT,
-        payload TEXT,
-        path TEXT,
-        user_agent TEXT
-    )
-    ''')
-    # alert_history table for tracking sent alerts
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS alert_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT NOT NULL,
-        alert_type TEXT NOT NULL,
-        severity TEXT NOT NULL,
-        message TEXT NOT NULL,
-        recipients TEXT,
-        status TEXT NOT NULL,
-        details TEXT
-    )
-    ''')
-    # rate_limit_violations table for tracking rate limit exceeded events
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS rate_limit_violations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT NOT NULL,
-        ip TEXT NOT NULL,
-        path TEXT,
-        reason TEXT NOT NULL,
-        limit_value INTEGER,
-        current_value INTEGER,
-        retry_after INTEGER
-    )
-    ''')
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        # users table
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        ''')
+        # logs table for blocked requests
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            time TEXT,
+            ip TEXT,
+            type TEXT,
+            payload TEXT,
+            path TEXT,
+            user_agent TEXT
+        )
+        ''')
+        # alert_history table for tracking sent alerts
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS alert_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            alert_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            message TEXT NOT NULL,
+            recipients TEXT,
+            status TEXT NOT NULL,
+            details TEXT
+        )
+        ''')
+        # rate_limit_violations table for tracking rate limit exceeded events
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS rate_limit_violations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            ip TEXT NOT NULL,
+            path TEXT,
+            reason TEXT NOT NULL,
+            limit_value INTEGER,
+            current_value INTEGER,
+            retry_after INTEGER
+        )
+        ''')
 
 def log_attack(ip, attack_type, payload, path='', user_agent=''):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("INSERT INTO logs (time, ip, type, payload, path, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
-              (str(datetime.datetime.utcnow()), ip, attack_type, payload, path, user_agent))
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("INSERT INTO logs (time, ip, type, payload, path, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
+                  (str(datetime.datetime.utcnow()), ip, attack_type, payload, path, user_agent))
 
 def get_client_ip(flask_request):
     # Try to get real IP if behind proxy (for dev this will usually be 127.0.0.1)
@@ -113,190 +109,174 @@ def get_client_ip(flask_request):
     return flask_request.remote_addr or '0.0.0.0'
 
 def create_user(username, password_plain):
-    conn = get_connection()
-    c = conn.cursor()
-    pw_hash = generate_password_hash(password_plain)
-    c.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-              (username, pw_hash, str(datetime.datetime.utcnow())))
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        pw_hash = generate_password_hash(password_plain)
+        c.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                  (username, pw_hash, str(datetime.datetime.utcnow())))
 
 def get_user_by_username(username):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        return (row['id'], row['username'], row['password_hash'])
-    return None
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,))
+        row = c.fetchone()
+        if row:
+            return (row['id'], row['username'], row['password_hash'])
+        return None
 
 def get_all_users():
     '''Get all users from the database'''
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT id, username, created_at FROM users ORDER BY created_at DESC")
-    rows = c.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, created_at FROM users ORDER BY created_at DESC")
+        rows = c.fetchall()
+        return [dict(row) for row in rows]
 
 def get_attack_stats():
     '''Get statistics about blocked attacks'''
-    conn = get_connection()
-    c = conn.cursor()
-    
-    # Total attacks
-    c.execute("SELECT COUNT(*) as total FROM logs")
-    total = c.fetchone()['total']
-    
-    # Attacks by type
-    c.execute("SELECT type, COUNT(*) as count FROM logs GROUP BY type ORDER BY count DESC")
-    by_type = [dict(row) for row in c.fetchall()]
-    
-    # Top attacking IPs
-    c.execute("SELECT ip, COUNT(*) as count FROM logs GROUP BY ip ORDER BY count DESC LIMIT 10")
-    top_ips = [dict(row) for row in c.fetchall()]
-    
-    # Attacks in last 24 hours
-    c.execute("""
-        SELECT COUNT(*) as count FROM logs 
-        WHERE datetime(time) > datetime('now', '-1 day')
-    """)
-    last_24h = c.fetchone()['count']
-    
-    # Attacks by hour (last 24 hours)
-    c.execute("""
-        SELECT strftime('%Y-%m-%d %H:00:00', time) as hour, COUNT(*) as count 
-        FROM logs 
-        WHERE datetime(time) > datetime('now', '-1 day')
-        GROUP BY hour 
-        ORDER BY hour
-    """)
-    by_hour = [dict(row) for row in c.fetchall()]
-    
-    conn.close()
-    
-    return {
-        'total': total,
-        'by_type': by_type,
-        'top_ips': top_ips,
-        'last_24h': last_24h,
-        'by_hour': by_hour
-    }
+    with db_connection() as conn:
+        c = conn.cursor()
+
+        # Total attacks
+        c.execute("SELECT COUNT(*) as total FROM logs")
+        total = c.fetchone()['total']
+
+        # Attacks by type
+        c.execute("SELECT type, COUNT(*) as count FROM logs GROUP BY type ORDER BY count DESC")
+        by_type = [dict(row) for row in c.fetchall()]
+
+        # Top attacking IPs
+        c.execute("SELECT ip, COUNT(*) as count FROM logs GROUP BY ip ORDER BY count DESC LIMIT 10")
+        top_ips = [dict(row) for row in c.fetchall()]
+
+        # Attacks in last 24 hours
+        c.execute("""
+            SELECT COUNT(*) as count FROM logs
+            WHERE datetime(time) > datetime('now', '-1 day')
+        """)
+        last_24h = c.fetchone()['count']
+
+        # Attacks by hour (last 24 hours)
+        c.execute("""
+            SELECT strftime('%Y-%m-%d %H:00:00', time) as hour, COUNT(*) as count
+            FROM logs
+            WHERE datetime(time) > datetime('now', '-1 day')
+            GROUP BY hour
+            ORDER BY hour
+        """)
+        by_hour = [dict(row) for row in c.fetchall()]
+
+        return {
+            'total': total,
+            'by_type': by_type,
+            'top_ips': top_ips,
+            'last_24h': last_24h,
+            'by_hour': by_hour
+        }
 
 def get_recent_logs(limit=50, offset=0, attack_type=None):
     '''Get recent attack logs'''
-    conn = get_connection()
-    c = conn.cursor()
-    
-    if attack_type:
-        c.execute("""
-            SELECT * FROM logs 
-            WHERE type = ?
-            ORDER BY id DESC 
-            LIMIT ? OFFSET ?
-        """, (attack_type, limit, offset))
-    else:
-        c.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
-    
-    rows = c.fetchall()
-    conn.close()
-    return rows
+    with db_connection() as conn:
+        c = conn.cursor()
+
+        if attack_type:
+            c.execute("""
+                SELECT * FROM logs
+                WHERE type = ?
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+            """, (attack_type, limit, offset))
+        else:
+            c.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+
+        rows = c.fetchall()
+        return rows
 
 def get_logs_by_date_range(start_date, end_date):
     '''Get logs within a date range'''
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        SELECT * FROM logs
-        WHERE datetime(time) BETWEEN datetime(?) AND datetime(?)
-        ORDER BY id DESC
-    """, (start_date, end_date))
-    rows = c.fetchall()
-    conn.close()
-    return rows
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT * FROM logs
+            WHERE datetime(time) BETWEEN datetime(?) AND datetime(?)
+            ORDER BY id DESC
+        """, (start_date, end_date))
+        rows = c.fetchall()
+        return rows
 
 def get_alert_history(limit=50, offset=0, alert_type=None):
     '''Get alert history'''
-    conn = get_connection()
-    c = conn.cursor()
+    with db_connection() as conn:
+        c = conn.cursor()
 
-    if alert_type:
-        c.execute("""
-            SELECT * FROM alert_history
-            WHERE alert_type = ?
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?
-        """, (alert_type, limit, offset))
-    else:
-        c.execute("SELECT * FROM alert_history ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+        if alert_type:
+            c.execute("""
+                SELECT * FROM alert_history
+                WHERE alert_type = ?
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+            """, (alert_type, limit, offset))
+        else:
+            c.execute("SELECT * FROM alert_history ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
 
-    rows = c.fetchall()
-    conn.close()
-    return rows
+        rows = c.fetchall()
+        return rows
 
 def get_alert_statistics():
     '''Get alert statistics'''
-    conn = get_connection()
-    c = conn.cursor()
+    with db_connection() as conn:
+        c = conn.cursor()
 
-    # Total alerts
-    c.execute("SELECT COUNT(*) as total FROM alert_history")
-    total = c.fetchone()['total']
+        # Total alerts
+        c.execute("SELECT COUNT(*) as total FROM alert_history")
+        total = c.fetchone()['total']
 
-    # Alerts by type
-    c.execute("SELECT alert_type, COUNT(*) as count FROM alert_history GROUP BY alert_type ORDER BY count DESC")
-    by_type = [dict(row) for row in c.fetchall()]
+        # Alerts by type
+        c.execute("SELECT alert_type, COUNT(*) as count FROM alert_history GROUP BY alert_type ORDER BY count DESC")
+        by_type = [dict(row) for row in c.fetchall()]
 
-    # Alerts by severity
-    c.execute("SELECT severity, COUNT(*) as count FROM alert_history GROUP BY severity ORDER BY count DESC")
-    by_severity = [dict(row) for row in c.fetchall()]
+        # Alerts by severity
+        c.execute("SELECT severity, COUNT(*) as count FROM alert_history GROUP BY severity ORDER BY count DESC")
+        by_severity = [dict(row) for row in c.fetchall()]
 
-    # Recent alerts (last 24 hours)
-    c.execute("""
-        SELECT COUNT(*) as count FROM alert_history
-        WHERE datetime(timestamp) > datetime('now', '-1 day')
-    """)
-    last_24h = c.fetchone()['count']
+        # Recent alerts (last 24 hours)
+        c.execute("""
+            SELECT COUNT(*) as count FROM alert_history
+            WHERE datetime(timestamp) > datetime('now', '-1 day')
+        """)
+        last_24h = c.fetchone()['count']
 
-    # Failed alerts
-    c.execute("SELECT COUNT(*) as count FROM alert_history WHERE status = 'failed'")
-    failed = c.fetchone()['count']
+        # Failed alerts
+        c.execute("SELECT COUNT(*) as count FROM alert_history WHERE status = 'failed'")
+        failed = c.fetchone()['count']
 
-    conn.close()
-
-    return {
-        'total': total,
-        'by_type': by_type,
-        'by_severity': by_severity,
-        'last_24h': last_24h,
-        'failed': failed
-    }
+        return {
+            'total': total,
+            'by_type': by_type,
+            'by_severity': by_severity,
+            'last_24h': last_24h,
+            'failed': failed
+        }
 
 def clear_alert_history():
     '''Clear all alert history'''
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM alert_history")
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM alert_history")
 
 def log_rate_limit_violation(ip, path, reason, limit_value, current_value, retry_after):
     '''Log rate limit violation'''
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO rate_limit_violations (timestamp, ip, path, reason, limit_value, current_value, retry_after)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (str(datetime.datetime.utcnow()), ip, path, reason, limit_value, current_value, retry_after))
-    conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO rate_limit_violations (timestamp, ip, path, reason, limit_value, current_value, retry_after)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (str(datetime.datetime.utcnow()), ip, path, reason, limit_value, current_value, retry_after))
 
 def get_rate_limit_violations(limit=50, offset=0):
     '''Get recent rate limit violations'''
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM rate_limit_violations ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
-    rows = c.fetchall()
-    conn.close()
-    return rows
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT * FROM rate_limit_violations ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+        rows = c.fetchall()
+        return rows
