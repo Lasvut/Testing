@@ -121,3 +121,35 @@ LOCALHOST_IP = '127.0.0.1'
 # ==========================================
 ATTACK_GENERATOR_DEFAULT_INTERVAL = 30  # Seconds between attack batches
 ATTACK_GENERATOR_DEFAULT_COUNT = 75     # Number of attacks per batch
+
+# ==========================================
+# ALERT SYSTEM
+# ==========================================
+# Alert severity emoji mappings
+ALERT_SEVERITY_EMOJI = {
+    'CRITICAL': '🚨',
+    'WARNING': '⚠️',
+    'INFO': 'ℹ️'
+}
+
+# Alert type name mappings
+ALERT_TYPE_NAMES = {
+    'flood': 'Attack Flood',
+    'critical_attack': 'Critical Attack',
+    'config_change': 'Configuration Change',
+    'system_health': 'System Health Alert'
+}
+
+# Discord color mappings (decimal values)
+ALERT_SEVERITY_COLORS_DISCORD = {
+    'CRITICAL': 15158332,  # Red
+    'WARNING': 16776960,   # Yellow
+    'INFO': 3447003        # Blue
+}
+
+# HTML/Email color mappings (hex values)
+ALERT_SEVERITY_COLORS_HTML = {
+    'CRITICAL': '#dc3545',  # Red
+    'WARNING': '#ffc107',   # Yellow
+    'INFO': '#17a2b8'       # Blue
+}

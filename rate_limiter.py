@@ -235,20 +235,27 @@ class RateLimiter:
 
         # Cleanup IP windows - only remove empty ones
         # Old timestamps naturally drop off due to maxlen
-        empty_ips = [ip for ip, window in self.ip_windows.items()
-                     if not window or (window and window[-1] < cutoff_time)]
-        for ip in empty_ips:
-            del self.ip_windows[ip]
+        self._cleanup_window_dict(self.ip_windows, cutoff_time)
 
         # Cleanup global window - trim old entries if needed
         while self.global_window and self.global_window[0] < cutoff_time:
             self.global_window.popleft()
 
         # Cleanup path-specific windows - only remove empty ones
-        empty_paths = [key for key, window in self.ip_path_windows.items()
-                       if not window or (window and window[-1] < cutoff_time)]
-        for key in empty_paths:
-            del self.ip_path_windows[key]
+        self._cleanup_window_dict(self.ip_path_windows, cutoff_time)
+
+    def _cleanup_window_dict(self, window_dict, cutoff_time):
+        """
+        Helper to clean up old entries from a window dictionary.
+
+        Args:
+            window_dict: Dictionary of windows to clean
+            cutoff_time: Timestamp threshold for removal
+        """
+        empty_keys = [key for key, window in window_dict.items()
+                      if not window or window[-1] < cutoff_time]
+        for key in empty_keys:
+            del window_dict[key]
 
     def get_statistics(self):
         """Get rate limiter statistics"""

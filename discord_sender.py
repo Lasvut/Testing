@@ -8,6 +8,11 @@ import requests
 import json
 from datetime import datetime
 from alerts_config import alert_config
+from constants import (
+    ALERT_SEVERITY_EMOJI,
+    ALERT_TYPE_NAMES,
+    ALERT_SEVERITY_COLORS_DISCORD
+)
 
 
 class DiscordSender:
@@ -78,29 +83,16 @@ class DiscordSender:
     def _build_embed(self, alert_type, severity, message, details):
         """Build Discord embed object"""
         # Color mapping for severity levels
-        color_map = {
-            'CRITICAL': 15158332,  # Red
-            'WARNING': 16776960,   # Yellow
-            'INFO': 3447003        # Blue
-        }
-        color = color_map.get(severity, 9807270)  # Default gray
+        color = ALERT_SEVERITY_COLORS_DISCORD.get(severity, 9807270)  # Default gray
 
         # Emoji mapping
-        emoji_map = {
-            'CRITICAL': '🚨',
-            'WARNING': '⚠️',
-            'INFO': 'ℹ️'
-        }
-        emoji = emoji_map.get(severity, '📢')
+        emoji = ALERT_SEVERITY_EMOJI.get(severity, '📢')
 
-        # Type name mapping
-        type_names = {
-            'flood': 'Attack Flood Detected',
-            'critical_attack': 'Critical Attack',
-            'config_change': 'Configuration Change',
-            'system_health': 'System Health Alert'
-        }
-        title = f"{emoji} {type_names.get(alert_type, 'WAF Alert')}"
+        # Type name mapping (add "Detected" suffix for flood type)
+        type_name = ALERT_TYPE_NAMES.get(alert_type, 'WAF Alert')
+        if alert_type == 'flood':
+            type_name = type_name + ' Detected'
+        title = f"{emoji} {type_name}"
 
         # Build fields
         fields = [
