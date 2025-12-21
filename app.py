@@ -4,6 +4,7 @@ import os
 import shutil
 import time
 from datetime import datetime
+from functools import wraps
 
 # Third-party imports (alphabetical)
 from flask import (
@@ -106,6 +107,38 @@ if os.path.exists('anomaly_detector_model.pkl'):
 attack_gen = AttackGenerator(base_url='http://localhost:5000', interval=30)
 # Note: Will start when app runs
 
+# ==========================================
+# AUTHENTICATION DECORATOR
+# ==========================================
+def login_required(f):
+    """
+    Decorator to require authentication for routes.
+
+    Usage:
+        @app.route('/protected')
+        @login_required
+        def protected_route():
+            # Route code here
+
+    If user is not authenticated, redirects to login page (for HTML routes)
+    or returns 401 JSON error (for API routes).
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user_id" not in session:
+            # Check if this is an API route (returns JSON)
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Unauthorized"}), 401
+            # For HTML routes, redirect to login
+            flash("Please log in to continue", "warning")
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# ==========================================
+# ROUTES
+# ==========================================
+
 @app.route('/')
 def index():
     if "user_id" in session:
@@ -140,53 +173,45 @@ def login():
     return render_template('login.html')
 
 @app.route('/dashboard')
+@login_required
 def dashboard():
-    if "user_id" not in session:
-        flash("Please log in to continue", "warning")
-        return redirect(url_for('login'))
     return render_template('dashboard.html', username=session.get('username'))
 
 @app.route('/monitor')
+@login_required
 def monitor():
-    if "user_id" not in session:
-        flash("Please log in to continue", "warning")
-        return redirect(url_for('login'))
-    
     stats = get_attack_stats()
     recent_logs = get_recent_logs(limit=200)
 
-    return render_template('monitor.html', 
+    return render_template('monitor.html',
                          username=session.get('username'),
                          stats=stats,
                          logs=recent_logs)
 
 @app.route('/tools')
+@login_required
 def tools():
-    if "user_id" not in session:
-        flash("Please log in to continue", "warning")
-        return redirect(url_for('login'))
-    
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     cursor.execute("SELECT COUNT(*) FROM logs")
     total_logs = cursor.fetchone()[0]
-    
+
     cursor.execute("SELECT DISTINCT type FROM logs ORDER BY type")
     attack_types = [row[0] for row in cursor.fetchall()]
-    
+
     cursor.execute("""
-        SELECT ip, COUNT(*) as count 
-        FROM logs 
-        GROUP BY ip 
-        ORDER BY count DESC 
+        SELECT ip, COUNT(*) as count
+        FROM logs
+        GROUP BY ip
+        ORDER BY count DESC
         LIMIT 10
     """)
     top_ips = [dict(row) for row in cursor.fetchall()]
-    
+
     conn.close()
-    
-    return render_template('tools.html', 
+
+    return render_template('tools.html',
                          username=session.get('username'),
                          total_logs=total_logs,
                          attack_types=attack_types,
@@ -197,28 +222,24 @@ def tools():
 # ==========================================
 
 @app.route('/api/db/stats')
+@login_required
 def api_db_stats():
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     cursor.execute("SELECT COUNT(*) FROM logs")
     total = cursor.fetchone()[0]
-    
+
     cursor.execute("SELECT type, COUNT(*) as count FROM logs GROUP BY type ORDER BY count DESC")
     by_type = [{"type": row[0], "count": row[1]} for row in cursor.fetchall()]
-    
+
     conn.close()
-    
+
     return jsonify({"total": total, "by_type": by_type})
 
 @app.route('/api/db/clear', methods=['POST'])
+@login_required
 def api_clear_logs():
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    
     data = request.get_json()
     clear_type = data.get('type', 'all')
     
@@ -260,10 +281,8 @@ def api_clear_logs():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/db/backup', methods=['POST'])
+@login_required
 def api_backup_db():
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    
     backup_dir = "backups"
     db_file = "app_data.db"
     
@@ -286,6 +305,7 @@ def api_backup_db():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/db/export', methods=['GET'])
+@login_required
 def api_export_csv():
     """
     Export attack logs to CSV file.
@@ -293,10 +313,6 @@ def api_export_csv():
     OPTIMIZATION: Uses StringIO and csv.writer for proper CSV formatting
     and 50% better performance on large datasets.
     """
-    if "user_id" not in session:
-        flash("Please log in to continue", "warning")
-        return redirect(url_for('login'))
-
     from io import StringIO
 
     conn = get_connection()
@@ -329,11 +345,9 @@ def api_export_csv():
     )
 
 @app.route('/api/db/pdf', methods=['POST'])
+@login_required
 def api_generate_pdf():
     """Generate PDF report of attack logs"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     try:
         from io import BytesIO
 
@@ -498,10 +512,8 @@ def api_generate_pdf():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/logs')
+@login_required
 def api_logs():
-    if "user_id" not in session:
-        return {"error": "Unauthorized"}, 401
-
     limit = request.args.get('limit', 100, type=int)
     offset = request.args.get('offset', 0, type=int)
     attack_type = request.args.get('type', None)
@@ -514,17 +526,13 @@ def api_logs():
 # ==========================================
 
 @app.route('/user-management')
+@login_required
 def user_management():
-    if "user_id" not in session:
-        flash("Please log in to continue", "warning")
-        return redirect(url_for('login'))
     return render_template('user_management.html', username=session.get('username'))
 
 @app.route('/api/users')
+@login_required
 def api_get_users():
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     try:
         users = get_all_users()
         return jsonify({"success": True, "users": users})
@@ -532,10 +540,8 @@ def api_get_users():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/users/create', methods=['POST'])
+@login_required
 def api_create_user():
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     data = request.get_json()
     username = data.get('username', '').strip()
     password = data.get('password', '')
@@ -564,17 +570,13 @@ def api_create_user():
 # ==========================================
 
 @app.route('/anomaly-testing')
+@login_required
 def anomaly_testing():
-    if "user_id" not in session:
-        flash("Please log in to continue", "warning")
-        return redirect(url_for('login'))
     return render_template('anomaly_testing.html', username=session.get('username'))
 
 @app.route('/api/anomaly/test', methods=['POST'])
+@login_required
 def api_anomaly_test():
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     data = request.get_json()
     # Improved SVM with calibration: 293 FP, 86.4% accuracy, 87% recall
     # Optimal threshold: 0.5 (50) - ALL TARGETS ACHIEVED
@@ -914,12 +916,9 @@ def get_malicious_samples():
 # ==========================================
 
 @app.route('/alerts')
+@login_required
 def alerts_page():
     """Alert configuration page"""
-    if "user_id" not in session:
-        flash("Please log in to continue", "warning")
-        return redirect(url_for('login'))
-
     if not ALERTS_AVAILABLE:
         flash("Alert system not available", "danger")
         return redirect(url_for('dashboard'))
@@ -927,12 +926,9 @@ def alerts_page():
     return render_template('alerts.html', username=session.get('username'))
 
 @app.route('/waf-config')
+@login_required
 def waf_config_page():
     """WAF configuration page"""
-    if "user_id" not in session:
-        flash("Please log in to continue", "warning")
-        return redirect(url_for('login'))
-
     if not WAF_CONFIG_AVAILABLE:
         flash("WAF configuration not available", "danger")
         return redirect(url_for('dashboard'))
@@ -940,11 +936,9 @@ def waf_config_page():
     return render_template('waf_config.html', username=session.get('username'))
 
 @app.route('/api/alerts/config', methods=['GET'])
+@login_required
 def api_get_alert_config():
     """Get current alert configuration"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     if not ALERTS_AVAILABLE:
         return jsonify({"error": "Alert system not available"}), 503
 
@@ -955,11 +949,9 @@ def api_get_alert_config():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/alerts/config', methods=['POST'])
+@login_required
 def api_update_alert_config():
     """Update alert configuration"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     if not ALERTS_AVAILABLE:
         return jsonify({"error": "Alert system not available"}), 503
 
@@ -989,11 +981,9 @@ def api_update_alert_config():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/alerts/test', methods=['POST'])
+@login_required
 def api_test_alerts():
     """Test alert configuration with provided settings"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     if not ALERTS_AVAILABLE:
         return jsonify({"error": "Alert system not available"}), 503
 
@@ -1118,11 +1108,9 @@ def api_test_alerts():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/alerts/history')
+@login_required
 def api_alert_history():
     """Get alert history"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     try:
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
@@ -1137,11 +1125,9 @@ def api_alert_history():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/alerts/statistics')
+@login_required
 def api_alert_statistics():
     """Get alert statistics"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     try:
         stats = get_alert_statistics()
         return jsonify({"success": True, "statistics": stats})
@@ -1149,11 +1135,9 @@ def api_alert_statistics():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/alerts/flood-stats')
+@login_required
 def api_flood_statistics():
     """Get flood detector statistics"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     if not ALERTS_AVAILABLE:
         return jsonify({"error": "Alert system not available"}), 503
 
@@ -1165,11 +1149,9 @@ def api_flood_statistics():
 
 # WAF Configuration Endpoints
 @app.route('/api/waf/config', methods=['GET'])
+@login_required
 def api_get_waf_config():
     """Get WAF configuration"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     if not WAF_CONFIG_AVAILABLE:
         return jsonify({"error": "WAF configuration not available"}), 503
 
@@ -1180,11 +1162,9 @@ def api_get_waf_config():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/waf/config', methods=['POST'])
+@login_required
 def api_update_waf_config():
     """Update WAF configuration"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     if not WAF_CONFIG_AVAILABLE:
         return jsonify({"error": "WAF configuration not available"}), 503
 
@@ -1209,11 +1189,9 @@ def api_update_waf_config():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/waf/toggle', methods=['POST'])
+@login_required
 def api_toggle_waf():
     """Toggle WAF on/off"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     if not WAF_CONFIG_AVAILABLE:
         return jsonify({"error": "WAF configuration not available"}), 503
 
@@ -1239,11 +1217,9 @@ def api_toggle_waf():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/waf/statistics')
+@login_required
 def api_waf_statistics():
     """Get WAF statistics"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     if not WAF_CONFIG_AVAILABLE:
         return jsonify({"error": "WAF configuration not available"}), 503
 
@@ -1265,11 +1241,9 @@ def api_waf_statistics():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/waf/rate-limit/reset', methods=['POST'])
+@login_required
 def api_reset_rate_limits():
     """Reset all rate limit tracking"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     if not WAF_CONFIG_AVAILABLE or not rate_limiter:
         return jsonify({"error": "Rate limiter not available"}), 503
 
@@ -1290,11 +1264,9 @@ def logout():
 
 # Attack Generator Control Endpoints
 @app.route('/api/attack-generator/start', methods=['POST'])
+@login_required
 def start_attack_generator():
     """Start the attack generator"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     try:
         attack_gen.start()
         return jsonify({"success": True, "message": "Attack generator started"})
@@ -1302,11 +1274,9 @@ def start_attack_generator():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/attack-generator/stop', methods=['POST'])
+@login_required
 def stop_attack_generator():
     """Stop the attack generator"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     try:
         attack_gen.stop()
         return jsonify({"success": True, "message": "Attack generator stopped"})
@@ -1314,11 +1284,9 @@ def stop_attack_generator():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/attack-generator/status', methods=['GET'])
+@login_required
 def attack_generator_status():
     """Get attack generator status"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     return jsonify({
         "running": attack_gen.running,
         "interval": attack_gen.interval
@@ -1326,19 +1294,15 @@ def attack_generator_status():
 
 # Attack Tools Page and API
 @app.route('/attack-tools')
+@login_required
 def attack_tools():
     """Manual attack generator page"""
-    if "user_id" not in session:
-        flash("Please log in to continue", "warning")
-        return redirect(url_for('login'))
     return render_template('attack_tools.html')
 
 @app.route('/api/attack-tools/generate', methods=['POST'])
+@login_required
 def api_generate_attacks():
     """Generate manual attacks for testing"""
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
     data = request.get_json()
     count = data.get('count', 75)
     attack_types = data.get('types', ['sql', 'xss', 'cmd', 'traversal', 'file_inclusion'])
