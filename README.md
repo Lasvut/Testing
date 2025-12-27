@@ -44,13 +44,11 @@ Validated on CSIC 2010 HTTP dataset.
   - Calibrated Linear SVM with character trigram features
   - 86.4% accuracy, 87% recall, only 293 false positives
   - Optimal threshold: 0.5 (50 in UI)
-
-- **`ultra_anomaly_detection.py`** - Conservative backup model
-  - XGBoost + Random Forest ensemble
-  - Used as fallback if SVM unavailable
+  - Used by both `middleware.py` (WAF) and `app.py` (testing)
 
 - **`improved_svm_model.pkl`** - **Production model file** (403 KB)
-- **`anomaly_detector_model.pkl`** - Backup model file (5.8 MB)
+  - Pre-trained on CSIC 2010 dataset (8000 normal + 5000 attack samples)
+  - Automatically loaded on application startup
 
 ### Training Scripts
 
