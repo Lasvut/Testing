@@ -36,7 +36,6 @@ from database import (
 )
 from improved_svm_detector import ImprovedSVMAnomalyDetector
 from middleware import waf_middleware
-from ultra_anomaly_detection import EnhancedUltraAnomalyDetector as AnomalyDetector
 
 # Import alert system
 try:
@@ -91,18 +90,8 @@ if os.path.exists('improved_svm_model.pkl'):
     except Exception as e:
         print(f"[App] ⚠️  Error loading Improved SVM model: {e}")
 else:
-    print("[App] ⚠️  improved_svm_model.pkl not found, will use conservative model")
-
-# Keep old model as backup
-PRETRAINED_DETECTOR = None
-if os.path.exists('anomaly_detector_model.pkl'):
-    try:
-        temp_detector = AnomalyDetector(enable_ml=True, use_supervised=True)
-        if temp_detector.load_model('anomaly_detector_model.pkl'):
-            PRETRAINED_DETECTOR = temp_detector
-            print("[App] ✅ Backup conservative model also loaded")
-    except Exception as e:
-        pass
+    print("[App] ⚠️  improved_svm_model.pkl not found")
+    print("[App] To train the model, run: python3 train_improved_svm.py")
 
 # Initialize attack generator (starts in background)
 attack_gen = AttackGenerator(base_url='http://localhost:5000', interval=30)
@@ -581,46 +570,21 @@ def api_anomaly_test():
 
     try:
         # Use Improved SVM model (production model: 86.4% acc, 87% recall, 293 FP)
-        if SVM_DETECTOR:
-            detector = SVM_DETECTOR
-            model_type = "Improved SVM (Calibrated, C=0.5)"
-            train_info = "Pre-trained on 8000 normal + 5000 attack samples (CSIC 2010)"
-            use_pretrained = True
-        elif PRETRAINED_DETECTOR:
-            # Fallback to conservative model
-            detector = PRETRAINED_DETECTOR
-            model_type = "Conservative XGBoost+RF"
-            train_info = "Pre-trained on 8000 normal + 5000 attack samples (CSIC 2010)"
-            use_pretrained = True
-            threshold = threshold * 200  # Convert back to 0-200 scale for old model
-        else:
-            # Last resort: train on-demand
-            detector = AnomalyDetector(enable_ml=True, use_supervised=True)
-            model_type = "On-Demand Training"
-            use_pretrained = False
+        if not SVM_DETECTOR:
+            return jsonify({
+                "success": False,
+                "error": "SVM model not loaded. Run 'python3 train_improved_svm.py' to train the model."
+            }), 503
 
-        # Get samples for testing
+        detector = SVM_DETECTOR
+        model_type = "Improved SVM (Calibrated, C=0.5)"
+        train_info = "Pre-trained on 8000 normal + 5000 attack samples (CSIC 2010)"
+
+        # Get samples for testing (use all for testing since model is pre-trained)
         normal_samples = get_normal_samples()
         malicious_samples = get_malicious_samples()
-
-        if use_pretrained:
-            # Use all samples for testing (model already trained)
-            test_normal = normal_samples
-            test_attacks = malicious_samples
-        else:
-            # Train on-demand with 70/30 split
-            normal_train_size = int(len(normal_samples) * 0.7)
-            attack_train_size = int(len(malicious_samples) * 0.7)
-
-            train_normal = normal_samples[:normal_train_size]
-            train_attacks = malicious_samples[:attack_train_size]
-            test_normal = normal_samples[normal_train_size:]
-            test_attacks = malicious_samples[attack_train_size:]
-
-            # Train with both normal and attack samples
-            detector.train_baseline(train_normal, attack_requests=train_attacks)
-            train_info = f"Trained on {normal_train_size} normal + {attack_train_size} attack samples"
-            threshold = threshold * 200  # Old model uses different scale
+        test_normal = normal_samples
+        test_attacks = malicious_samples
 
         # Test variables
         true_positives = 0
