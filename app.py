@@ -605,7 +605,7 @@ def api_anomaly_test():
         if model_type == "Linear SVM (Character Trigrams)":
             detailed_log.append(f"Features: 10,000 character trigrams (TF-IDF)")
             detailed_log.append(f"Expected: 83% accuracy, ~300 FP, 79% recall")
-        detailed_log.append(f"Model Type: {'PRE-TRAINED' if use_pretrained else 'On-Demand Training'}")
+        detailed_log.append(f"Model Type: PRE-TRAINED")
         detailed_log.append(f"Threshold: {threshold:.2f} (probability cutoff)")
         detailed_log.append("")
 
